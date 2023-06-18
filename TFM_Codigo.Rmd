@@ -1,0 +1,3451 @@
+---
+title: "TFM"
+output: html_document
+date: "2023-04-04"
+---
+# Paquetes
+```{r cars, warning=FALSE, message=FALSE}
+rm(list=ls(all=TRUE))
+library(readxl)
+library(dplyr)
+library(purrr)
+library(gtools)
+library(caret)
+library(tidyr)
+library(knitr)
+library(plotly)
+library(ggplot2)
+library(gbm)
+library(timetk)
+library(quantmod)
+library(forecast)
+library(tictoc)
+library(stringr)
+library(skimr)
+library(tidyverse)
+library(xgboost)
+library(plyr)
+library(lubridate)
+library(gdata)
+library(prophet)
+library(tidymodels)
+library(modeltime)
+library("zoo")
+library(keras)
+library(xts)
+library(dplyr)
+library(scales)
+library(neuralnet)
+```
+
+# Introduccion
+
+## Lectura de datos
+```{r}
+# Ponemos la direccion donde se encuentran nuestros documentos
+personal_path <- "C:/Users/mp334/OneDrive/Escritorio/TFM/"
+
+# Leemos los documentos
+data_Ciclo <- read_xlsx(paste0(personal_path,
+                               "DatosCicloAprovisionamiento.xlsx"))
+data_Venta <- read_xlsx(paste0(personal_path
+                               ,"Datos.xlsx"), 
+                        sheet = 'Venta')
+data_Calendario <- read_xlsx(paste0(personal_path,
+                                    "Datos.xlsx"), 
+                             sheet = 'Calendario')
+data_Promo <- read_xlsx(paste0(personal_path,
+                               "Datos.xlsx"), 
+                        sheet = 'Promociones')
+data_Stock <- read_xlsx(paste0(personal_path,
+                               "Datos.xlsx"), 
+                        sheet = 'Stock')
+data_Precio <- read_xlsx(paste0(personal_path,
+                                "DatosPrecioMedio.xlsx"))
+```
+
+## Comprovacion datasets
+NOTA: En excel ya se han arreglado las fechas para que esten en formato Date, ya que nuestros datasets tenian la combinacion fechas en sequencia de numeros, és decir, pasamos de **AAAAMMDD** a **AAAA-MM-DD**.
+
+### Data_Ciclo
+```{r}
+data_Ciclo <- as.data.frame(data_Ciclo)
+summary(data_Ciclo)
+head(data_Ciclo)
+```
+
+En este dataset tenemos 3 variables:
+
+- **Producto**: Numero identificativo del producto que tenemos.
+- **diasEntrePedidos**: Variable entera que nos indica la cantidad de días transcurridos entre dos pedidos consecutivos.
+- **diasLeadTime**: Variable entera que representa el tiempo transcurrido desde que se realiza un pedido hasta que se completa y se entrega el producto final.
+
+### Data Venta
+```{r}
+data_Venta <- as.data.frame(data_Venta)
+summary(data_Venta)
+
+# Arreglamos la variable de Fecha
+data_Venta$Fecha <- as.Date(data_Venta$Fecha, 
+                            "%Y-%m-%d")
+summary(data_Venta)
+
+# Vamos a ver los productos que no estan en esta hoja
+print("Los productos que no tenemos datos de venta son:")
+print(setdiff(1:1000, 
+              unique(data_Venta$producto)))
+
+# Vemos los primeros productos 
+head(data_Venta)
+```
+
+En primer lugar, hemos arreglado las Fechas con el formato correcto.
+En este dataset tenemos 4 variables:
+
+- **Producto**: Numero identificativo del producto que tenemos.
+- **idSecuencia**: Variable entera que tiene la fecha en formato *AAAAMMDD*
+- **Fecha**: Transformacion realizada en excel sobre la variable **idSecuencia**, teniendo la fecha en formato correcto para el analisis de resultados.
+- **udsVenta**: Variable numerica con la cantidad de productos servidos?
+
+### Data Calendario
+```{r}
+data_Calendario <- as.data.frame(data_Calendario)
+summary(data_Calendario)
+
+# Arreglamos la variable de Fecha
+data_Calendario$Fecha <- as.Date(data_Calendario$Fecha, 
+                                 "%Y-%m-%d")
+summary(data_Calendario)
+
+# Problemas con el dia 2021-04-04
+data_Calendario$Fecha[data_Calendario$idSecuencia == 20210404] <- as.Date("2021-04-04")
+
+# Muestra
+head(data_Calendario)
+```
+
+Hemos arreglado las Fechas con el formato correcto.
+En este dataset tenemos 4 variables:
+
+- **idSecuencia**: Variable entera que tiene la fecha en formato *AAAAMMDD*
+- **Fecha**: Transformacion realizada en excel sobre la variable **idSecuencia**, teniendo la fecha en formato correcto para el analisis de resultados.
+- **bolOpen**: Variable booleana donde 1 es que la tienda esta abierta y 0 que se encuentra cerrada.
+- **bolHoliday**: Variable booleana donde 1 es festivo y 0 es dia laborable.
+
+### Data Promo
+```{r}
+data_Promo <- as.data.frame(data_Promo)
+summary(data_Promo)
+
+# Arreglamos la variable de Fecha
+data_Promo$FechaIni <- as.Date(data_Promo$FechaIni,
+                               "%Y-%m-%d")
+data_Promo$FechaFin <- as.Date(data_Promo$FechaFin,
+                               "%Y-%m-%d")
+head(data_Promo)
+```
+
+Hemos arreglado las Fechas con el formato correcto.
+En este dataset tenemos 5 variables:
+
+- **Producto**: Numero identificativo del producto que tenemos.
+- **idSecuenciaIni**: Variable entera que tiene la fecha en formato *AAAAMMDD*, donde indica el inicio de la promocion.
+- **FechaIni**: Transformacion realizada en excel sobre la variable **idSecuenciaIni**, teniendo la fecha en formato correcto para el analisis de resultados.
+- **idSecuenciaFin**: Variable entera que tiene la fecha en formato *AAAAMMDD*, donde indica el inicio de la promocion.
+- **FechaFin**: Transformacion realizada en excel sobre la variable **idSecuenciaFin**, teniendo la fecha en formato correcto para el analisis de resultados.
+
+### Data Stock
+```{r}
+data_Stock <- as.data.frame(data_Stock)
+summary(data_Stock)
+
+# Arreglamos la variable de Fecha
+data_Stock$Fecha <- as.Date(data_Stock$Fecha, 
+                            "%Y-%m-%d")
+head(data_Stock)
+```
+
+Hemos arreglado las Fechas con el formato correcto.
+En este dataset tenemos 4 variables:
+
+- **Producto**: Numero identificativo del producto que tenemos.
+- **idSecuencia**: Variable entera que tiene la fecha en formato *AAAAMMDD*, donde indica el dia contabilizado el stock.
+- **Fecha**: Transformacion realizada en excel sobre la variable **idSecuenciaIni**, teniendo la fecha en formato correcto para el analisis de resultados.
+- **udsStock**: Unidades de producto almacenado
+
+### Data Precio
+```{r}
+data_Precio <- as.data.frame(data_Precio)
+summary(data_Precio)
+```
+
+En este dataset tenemos 2 variables:
+
+- **Producto**: Numero identificativo del producto que tenemos.
+- **eurPrecioMedio**: Media de precio de los productos, la usaremos para calcular el coste de almacenamiento.
+
+## Creacion del dataset maestro
+
+En esta seccion uniremos todos los datasets en uno, donde tendremos una unica fecha, e introduciremos los datos segun producto y fecha. Por ahora dejaremos en valor nulos aquellas variables que no tengan valor en la fecha elegida. Las variables de **idsecuencia** no se incorporaran al dataset.
+
+```{r}
+## Stock y Venta
+data_help <- left_join(data_Stock, data_Venta, 
+                       by = c("producto", "Fecha")) %>%
+  dplyr::select(-starts_with("id"))
+
+# Valores nulos generados
+sum(is.na(data_help))
+# Resumen valores nulos
+summary(data_help[!complete.cases(data_help), ])
+
+# Filtramos y quitamos todos los productos en 2023-04-04
+data_help <- data_help %>%
+  dplyr::filter(Fecha != as.Date("2023-04-04", 
+                                 "%Y-%m-%d"))
+
+# Valors nulls generats
+sum(is.na(data_help))
+
+```
+
+Vemos que hemos creado unos cuantos valores nulos al hacer esta combinacion, pero la parte mas importante es que estos valores nulos corresponden al 4 de abril del 2023, todos, por tanto quitaremos esta fecha para seguir trabajando. (podriamos predecir el stock con esto, pero no la venta).
+
+```{r}
+## Ahora con calendario
+data_help <- left_join(data_help, 
+                       data_Calendario, 
+                       by = c("Fecha")) %>%
+  dplyr::select(-starts_with("id"))
+
+# Valores nulos generados
+print(sum(is.na(data_help)))
+```
+
+En este caso, hemos unido los datos del calendario, obteniendo asi informacion de si la tienda ha estado abierta o no. No ha ocasionado ningun problema.
+
+
+
+```{r}
+## Con Ciclo
+data_help <- full_join(data_help, 
+                       data_Ciclo, 
+                       by = c("producto"))
+
+# Valores nulos generados
+sum(is.na(data_help))
+# Resumen valores nulos
+summary(data_help[!complete.cases(data_help), ])
+
+# Vemos los productos que dan valores nulos
+data_help[!complete.cases(data_help), ]$producto
+
+# Estos productos son los que no se encuentran en Datos, asi que seran eliminados.
+data_help <- na.omit(data_help)
+
+# Valores nulos generados
+sum(is.na(data_help))
+# Resumen valores nulos
+summary(data_help)
+
+```
+
+En este conjunto de datos tenemos productos que no hay en la hoja de venta, por tanto, seran eliminados. Identificando asi que productos no estan en nuestro conjunto de datos de ventas.
+
+```{r}
+## PRECIO
+data_help <- left_join(data_help, 
+                       data_Precio, 
+                       by = c("producto"))
+
+# Valores nulos generados
+sum(is.na(data_help))
+
+# Vemos como es
+head(data_help)
+```
+
+
+
+```{r}
+## Variable promocion
+data_Promo <- data_Promo %>%
+   dplyr::select(-starts_with("id"))
+data_help <- data_help
+
+for (i in unique(data_help$producto)) {
+  # Subconjunto de la tabla de intervalos de fechas para el producto actual
+  intervalos <- data_Promo[data_Promo$producto == i,]
+  
+  # Crea una nueva variable booleana para el producto actual
+  data_help$promo_activated[data_help$producto == i] <- FALSE
+  
+    # Itera a través de cada intervalo de fechas para el producto actual y verifica si la fecha diaria se encuentra dentro del intervalo
+  for (j in 1:nrow(intervalos)) {
+    data_help$promo_activated[data_help$producto == i & 
+                                  data_help$Fecha >=intervalos$FechaIni[j] & 
+                                  data_help$Fecha <= intervalos$FechaFin[j]] <- TRUE
+  }
+}
+
+# Convertimos a numerico
+data_help$promo_activated <- as.numeric(data_help$promo_activated)
+```
+
+Este codigo tarda en ejecutarse, ya que realiza una transformacion y la incorpora al dataset, para saber si el producto en ese dia se encuentra en promocion o no.
+
+
+## Estudio Stock
+
+```{r, warning = FALSE}
+## Veiem Dades amb estoc nul o negatiu
+data_summarise <- data_help %>%
+  dplyr::summarise(
+    stock_mal     = ifelse(udsStock <= 0, TRUE, FALSE),
+    venta_negatiu = ifelse(udsVenta < 0, TRUE, FALSE)
+  )
+## Si hi ha stock negatiu, posarem un valor nul en les ventes
+table(data_summarise)
+```
+
+Llegados a este punto, nos tenemos que preguntar, porque hay ventas negativas? y stock negativo? Podemos suponer que el stock negativo viene causado por rotura del producto en el almacen, mientras que las ventas negativas pueden darse de producto servido pero des de otro centro logistico. De un total con 705672 entradas tenemos 16052 valores extraños. Estos valores se han de modificar, pero que criterio usamos? la media de los dias anteriores? los ponemos como valor 0? Hay muchas maneras de trabajar con valores nulos, pero es necesario encontrar una manera correcta. Haremos la sustitucion de los valores nulos con media movil de 5 dias anteriores
+
+```{r}
+# Vamos a hacer la media de los 5 dias anteriores
+data_help <- data_help %>%
+  group_by(producto) %>%
+  arrange(Fecha) %>%
+  dplyr::mutate(
+    udsVenta = ifelse(udsVenta < 0 | udsStock <= 0, 
+                      NA, 
+                      udsVenta)
+  ) %>%
+  ungroup()
+
+# Comprovamos los nulos calculados anteriormente
+print(sum(is.na(data_help$udsVenta)))
+
+# Hacemos la media de 5 dias anteriores
+data_help <- data_help %>%
+  group_by(producto) %>%
+  arrange(Fecha) %>%
+  dplyr::mutate(
+    udsVenta = if_else(is.na(udsVenta),
+                       zoo::rollapply(data  = udsVenta,
+                                      width = 5,
+                                      FUN   = mean,
+                                      fill  = NA,
+                                      align = "right"),
+                                      udsVenta)
+  ) %>%
+  ungroup()
+
+# Volvemos a ver si hay nulos
+print(sum(is.na(data_help$udsVenta)))
+```
+
+Viendo que no conseguimos quitar todos los valores nulos, ya que parece ser que hay dias consecutivos con incocistencias, optaremos actualmente por ponerlos todos a 0, veremos que otra solucion podemos aplicar para mejorar los resultados.
+
+
+```{r}
+# Ponemos a 0 los dias negativos
+data_help <- data_help %>%
+  group_by(producto) %>%
+  arrange(Fecha) %>%
+  dplyr::mutate(
+    udsVenta = if_else(is.na(udsVenta),
+                       0,
+                       udsVenta)) %>%
+  ungroup() %>%
+  select(-udsStock)
+print(sum(is.na(data_help$udsVenta)))
+
+## Comrpovamos si el festivo se vende
+print(nrow(data_help %>% filter(udsVenta != 0 & bolHoliday == 1)))
+```
+
+Ahora, partiremos de este data set para los diferntes modelos. Hacemos notar que segun el modelo que tiremos los dias festivos pueden ser un problema.
+Por ultimo, comentamos que para ver los resultados haremos listas anidadas, enfocandonos en cada producto, y haciendo una lista anidada con la suma de todos ellos.
+
+# Analisis de los datos
+
+## Analisis y procesado de los datos atipicos
+
+En este apartado veremos los datos atipicos de cada producto, como tenemos los datos en dias, y en los dias festivos no se venden, hay que saber que estos dias afectaran al estudio de los datos atipicos. Primero veremos los datos atipicos en el computo global, para saber de manera global si tenemos muchos datos fuera de rango. Para ello utilizaremos el estudio box plot, BLA BLA BLA
+
+```{r}
+# Calculamos los datos a nivel global
+data_outliers_global <- data_help %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Creamos el boxplot con la variable de Ventas
+outliers_global <- boxplot(data_outliers_global$udsVenta)
+
+# Vemos el intervalo de outliers y una tabla con todos ellos
+cat("Los datos correctos estan en el intevalo: [", outliers_global$stats[1], ",", outliers_global$stats[5], "] \n")
+
+print(table(outliers_global$out))
+```
+
+Usando el conjunto total ed dias, vemos que los outliers se consideran aquellos dias que se han vendido menos de 1735 y mayor de 5002, en este caso tenemos un total de 148 valores considerados atipicos, los quales 130 son los 0, vamos a ver si eliminamos los dias cerrados de este estudio.
+
+```{r}
+# Calculamos los datos a nivel global
+data_outliers_global_open <- data_help %>%
+  dplyr::filter(bolOpen == 1) %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Creamos el boxplot con la variable de Ventas
+outliers_global <- boxplot(data_outliers_global_open$udsVenta)
+
+# Vemos el intervalo de outliers
+cat("Los datos correctos estan en el intevalo: [", outliers_global$stats[1], ",", outliers_global$stats[5], "] \n")
+print(table(outliers_global$out))
+print(length(outliers_global$out))
+```
+
+En este caso, los numeros considerados como atipicos son los que se encuentran fuera del rango [2260,4741]. Con solo los dias abiertos tenemos un total de 43 datos atipicos, donde 17 son 0. BLA BLA
+
+Vamos a calcular los outliers considerados de esta forma por cada producto
+
+```{r}
+data_outliers_prod <- data.frame(producto = integer(),
+                                 inferior = integer(),
+                                 superior = integer(),
+                                 cantidad = integer(),
+                                 max      = integer(),
+                                 tabla    = I(list()))
+
+for (i in sort(unique(data_help$producto))) {
+  producto <- i
+  outliers <- data_help %>%
+  dplyr::filter(producto == i)
+  
+  bp <- boxplot(outliers$udsVenta, plot = FALSE)
+  
+  data_outliers_prod <- rbind(data_outliers_prod, data.frame(producto = i,
+                                                             inferior = bp$stats[1],
+                                                             superior = bp$stats[5],
+                                                             cantidad = length(bp$out),
+                                                             max      = max(bp$out),
+                                                             tabla    = I(list(table(bp$out)))))
+}
+```
+
+A ver como evoluciona si solo vemos los dias abiertos
+
+```{r}
+data_outliers_prod_open <- data.frame(producto = integer(),
+                                 inferior = integer(),
+                                 superior = integer(),
+                                 cantidad = integer(),
+                                 max      = integer(),
+                                 tabla    = I(list()))
+
+for (i in sort(unique(data_help$producto))) {
+  producto <- i
+  outliers <- data_help %>%
+  dplyr::filter(producto == i & bolOpen == 1)
+  
+  bp <- boxplot(outliers$udsVenta, plot = FALSE)
+  
+  data_outliers_prod_open <- rbind(data_outliers_prod_open, 
+                                   data.frame(producto = i,
+                                              inferior = bp$stats[1],
+                                              superior = bp$stats[5],
+                                              cantidad = length(bp$out),
+                                              max      = max(bp$out),
+                                              tabla    = I(list(table(bp$out)))))
+}
+```
+
+## Correlacion
+### Autocorrelacion
+
+En primer lugar vamos a ver como se comporta la variable de udsVenta con sus respectivos lags, por si alguna de estas variables puede ayudar a algun modelo.
+
+```{r}
+data_lags_uds <- data_help %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+
+Tm = length(data_lags_uds$udsVenta)
+spm.acf <- acf(data_lags_uds$udsVenta, 
+               lag.max=31, 
+               plot=FALSE)
+spm.acf <- data.frame(lag = 0:31, 
+                      acf = spm.acf$acf)
+
+ggplot(spm.acf, 
+       aes(x = lag, 
+           y = acf)) + 
+  geom_bar(stat = "identity", 
+           fill = "brown") + 
+  geom_hline(yintercept =  1.96 * Tm^(-0.5),
+             color      = "steelblue3", 
+             linetype   = "dashed") + 
+  geom_hline(yintercept = -1.96 * Tm^(-0.5), 
+             color      = "steelblue3",
+             linetype   = "dashed") +
+  theme_classic() +
+  ggtitle("LAGS udsVenta")
+```
+
+Como podemos ver, la serie tiene buena correlacion con los datos de 7 dias atras. Es normal que las ventas de los lunes martes y miercoles esten correlacionadas con todos los lunes martes miercoles etc... Ademas de que los findes siempre hay venta 0. Vamos a ver quue ocurre si escoguemos los dias que esta abierto.
+
+```{r}
+
+data_lags_uds <- data_help %>%
+  dplyr::filter(bolOpen == 1) %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+
+Tm = length(data_lags_uds$udsVenta)
+spm.acf <- acf(data_lags_uds$udsVenta, 
+               lag.max=31, 
+               plot=FALSE)
+spm.acf <- data.frame(lag = 0:31, 
+                      acf = spm.acf$acf)
+
+ggplot(spm.acf, 
+       aes(x = lag, 
+           y = acf)) + 
+  geom_bar(stat = "identity", 
+           fill = "brown") + 
+  geom_hline(yintercept =  1.96 * Tm^(-0.5),
+             color      = "steelblue3", 
+             linetype   = "dashed") + 
+  geom_hline(yintercept = -1.96 * Tm^(-0.5), 
+             color      = "steelblue3",
+             linetype   = "dashed") +
+  theme_classic() +
+  ggtitle("LAGS udsVenta Open")
+```
+
+Quitando los dias que no este abierto el local perdemos toda correlacion posible, ya que parece que los datos no siguen ningun patron sin usar estos dias.
+
+### Correlacion con las otras variables numericas
+Vamos a ver como es la correlacion entre variables por cada producto. El problema de hacer este estudio de manera global es que la mayoria de nuestros valores son de tipo booleano, és decir, solo valen 0 o 1, y no hay manera de agupar estos datos de manera global.
+
+```{r, warning = FALSE}
+df_CORR <- data.frame(producto = integer(),
+                      udsVenta = numeric(),
+                      bolOpen  = numeric(),
+                      bolHoliday = numeric(),
+                      diasEntrePedidos = numeric(),
+                      eurPrecioMedio = numeric(),
+                      promo_activated = numeric())
+
+for (i in sort(unique(data_help$producto))) {
+  data_cor_pro <- data_help %>%
+    dplyr::filter(producto == i) %>%
+    select(-producto, -Fecha)
+  correlation <- cor(data_cor_pro)
+  correlation <- c(correlation[1,])
+  df_CORR <- rbind(df_CORR, data.frame(producto = i,
+                       udsVenta = correlation[1],
+                       bolOpen  = correlation[2],
+                       bolHoliday = correlation[3],
+                       diasEntrePedidos = correlation[4],
+                       eurPrecioMedio = correlation[5],
+                       promo_activated = correlation[6]))
+}
+```
+
+COMENTAR, SOLO CORRELACIONA CON 3 VARIABLES JEJE
+
+
+## Serie temporal nivel global
+
+Vamos a ver como es la serie temporal de los datos y su descomposicion, primero agruparemos los datos de todos los productos en uno global.
+```{r}
+# Creamos la agrupacion
+datos_all <- data_help %>% 
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Creamos la serie temporal de la agrupacion
+serie <- ts(datos_all$udsVenta,
+            start     = c(2021, 95), 
+            frequency = 365)
+descom <- decompose(serie)
+
+# Observamos la descomposicion en sus componentes
+plot(descom)
+
+# Creamos un data frame con los componentes
+df_descom <- data.frame(
+  Fecha          = time(serie),
+  Observado      = descom$x,
+  Tendencia      = descom$trend,
+  Estacionalidad = descom$seasonal,
+  Ruido          = descom$random
+)
+
+# Observado
+ggplot(data = df_descom, 
+       aes(x = Fecha,
+           y = Observado)) + 
+  geom_line()
+# Tendencia
+ggplot(data = df_descom, 
+       aes(x = Fecha, 
+           y = Tendencia)) + 
+  geom_line()
+# Estacionalidad del 2022, se repite para todos los años
+ggplot(data = df_descom %>% filter(floor(Fecha) == 2022), 
+       aes(x = Fecha, 
+           y = Estacionalidad)) + 
+  geom_line()
+# Ruido
+ggplot(data = df_descom, 
+       aes(x = Fecha, 
+           y = Ruido)) + 
+  geom_line()
+```
+
+Como en nuestra serie temporal tenemos muchos 0, vemos que esto se queda en la estacionalida (ya que son todos los domingos), pero tambien provoca que sea dificil la lectura visual de los datos, vamos a eliminar todos aquellos dias que la tienda ha estado cerrada, y vemos como queda la descomposicion.
+
+```{r}
+# Creamos la agrupacion
+datos_all_filtro <- data_help %>% 
+  dplyr::filter(bolOpen == 1) %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Dias laborables del primer año completo
+Dias <- nrow(datos_all_filtro  %>% 
+               filter(year(Fecha) == 2022))
+
+# Creamos la serie temporal de la agrupacion, como no tenemos festivos entonces los dias laborables son menos
+serie_filtro <- ts(datos_all_filtro$udsVenta, 
+                   start     = c(2021, 95), 
+                   frequency = Dias)
+descom_filtro <- decompose(serie_filtro)
+
+# Observamos la descomposicion en sus componentes
+plot(descom)
+
+# Creamos un data frame con los componentes
+df_descom_filtro <- data.frame(
+  Fecha          = time(serie_filtro),  
+  Observado      = descom_filtro$x,
+  Tendencia      = descom_filtro$trend,
+  Estacionalidad = descom_filtro$seasonal,
+  Ruido          = descom_filtro$random
+)
+
+# Observado
+ggplot(data = df_descom_filtro, 
+       aes(x = Fecha, 
+           y = Observado)) + 
+  geom_line()
+# Tendencia
+ggplot(data = df_descom_filtro, 
+       aes(x = Fecha, 
+           y = Tendencia)) + 
+  geom_line()
+# Estacionalidad del 2022, se repite para todos los años
+ggplot(data = df_descom_filtro %>% filter(floor(Fecha) == 2022),
+       aes(x = Fecha, 
+           y = Estacionalidad)) + 
+  geom_line()
+# Ruido
+ggplot(data = df_descom_filtro, 
+       aes(x = Fecha, 
+           y = Ruido)) + 
+  geom_line()
+```
+
+Vamos a elegir un producto aleatorio y veremos su descomposicion
+
+```{r}
+# Creamos la agrupacion
+
+datos_all_prod <- data_help %>% 
+  dplyr::filter(producto == 441) %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Creamos la serie temporal de la agrupacion
+serie <- ts(datos_all_prod$udsVenta, 
+            start     = c(2021, 95), 
+            frequency = 365)
+descom <- decompose(serie)
+
+# Observamos la descomposicion en sus componentes
+plot(descom)
+
+# Creamos un data frame con los componentes
+df_descom_prod <- data.frame(
+  Fecha          = time(serie),  
+  Observado      = descom$x,
+  Tendencia      = descom$trend, 
+  Estacionalidad = descom$seasonal,  
+  Ruido          = descom$random 
+)
+
+# Observado
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha, 
+           y = Observado)) + 
+  geom_line()
+# Tendencia
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha, 
+           y = Tendencia)) + 
+  geom_line()
+# Estacionalidad del 2022, se repite para todos los años
+ggplot(data = df_descom_prod %>% filter(floor(Fecha) == 2022), 
+       aes(x = Fecha, 
+           y = Estacionalidad)) + 
+  geom_line()
+# Ruido
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha, 
+           y = Ruido)) + 
+  geom_line()
+```
+Ahora solo los dias que esta abierto, no se puede apreciar mucha diferencia con todo el calendario.
+
+```{r}
+# Creamos la agrupacion
+
+datos_all_prod <- data_help %>% 
+  dplyr::filter(bolOpen == 1) %>%
+  dplyr::filter(producto == 441) %>%
+  dplyr::group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Dias laborables del primer año completo
+Dias <- nrow(datos_all_prod  %>% filter(year(Fecha) == 2022))
+
+# Creamos la serie temporal de la agrupacion
+serie <- ts(datos_all_prod$udsVenta, 
+            start     = c(2021, 95),
+            frequency = Dias)
+descom <- decompose(serie)
+
+# Observamos la descomposicion en sus componentes
+plot(descom)
+
+# Creamos un data frame con los componentes
+df_descom_prod <- data.frame(
+  Fecha          = time(serie),  
+  Observado      = descom$x,
+  Tendencia      = descom$trend,
+  Estacionalidad = descom$seasonal,
+  Ruido          = descom$random 
+)
+
+# Observado
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha, 
+           y = Observado)) + 
+  geom_line()
+# Tendencia
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha,
+           y = Tendencia)) +
+  geom_line()
+# Estacionalidad del 2022, se repite para todos los años
+ggplot(data = df_descom_prod %>% filter(floor(Fecha) == 2022),
+       aes(x = Fecha, 
+           y = Estacionalidad)) + 
+  geom_line()
+# Ruido
+ggplot(data = df_descom_prod, 
+       aes(x = Fecha, 
+           y = Ruido)) + 
+  geom_line()
+```
+
+# Modelos
+## Conjunt entrenament / test
+
+En el mundo laboral, habitualmente se suele emprar el conjunto de datos de entrenamiento los años anteriores al ultimo que se tiene registro, y este ultimo como datos de muestreo. Como tenemos 2 años de observacion, utilizaremos los meses de 2023 como el conjunto de test, y los datos anteriores a este como el conjunto de entrenamiento. 
+
+### Conjunto de entrenamiento: DATOS DE ESTE AÑO
+```{r}
+# Datos entrenamiento y test
+df_train <- data_help %>%
+  filter( Fecha < as.Date("2023-01-01"))
+df_test <- data_help %>%
+  filter( Fecha >= as.Date("2023-01-01"))
+
+# Datos entrenamiento y test de manera global
+df_train_all <- data_help %>%
+  filter( Fecha < as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+df_test_all <- data_help %>%
+  filter( Fecha >= as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+```
+
+## NAIVE
+
+
+### Nivel global
+
+```{r}
+# Creacion de la serie temporal
+serie_train <- ts(df_train_all$udsVenta, 
+                  start     = c(2021, 95), 
+                  frequency = 365)
+serie_test <- ts(df_test_all$udsVenta, 
+                 start     = c(2023, 01), 
+                 frequency = nrow(df_test_all))
+
+# Aplicar el metodo Naive
+naive_forecast <- naive(serie_train, 
+                        h = nrow(df_test_all))
+
+# Calcular el error RMSE
+rmse <- sqrt(mean((naive_forecast$mean - df_test_all$udsVenta)^2))
+
+# Graficar los resultados
+p <- ggplot(df_test_all, aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = naive_forecast$mean), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas",
+       title = "Método Naive")
+
+# Añadimos leyenda del RMSE
+p + annotate("text", x = min(df_test_all$Fecha), 
+             y = max(df_test_all$udsVenta), 
+             label = paste("RMSE:", 
+                           round(rmse, 2)), 
+             hjust = 0,
+             vjust = 1)
+```
+
+### Nivel global sin dias cerrados
+
+```{r}
+# Creacion de los nuevos datos de entrenamiento y test
+df_train_all_filtro <- data_help %>%
+  filter(bolOpen != 0) %>%
+  filter( Fecha < as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+df_test_all_filtro <- data_help %>%
+  filter(bolOpen != 0) %>%
+  filter( Fecha >= as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta)
+  )
+
+# Calculo de dias laborables en un año
+Dias <- nrow(df_train_all_filtro %>% 
+               filter(year(Fecha) == 2022))
+
+# Creacion de las series temporales
+serie_train_filtro <- ts(df_train_all$udsVenta, 
+                         start     = c(2021, 95), 
+                         frequency = Dias)
+serie_test_filtro <- ts(df_test_all$udsVenta, 
+                        start     = c(2023, 01),
+                        frequency = nrow(df_test_all))
+
+
+# Aplicar el metodo Naive
+naive_forecast <- naive(serie_train_filtro, 
+                        h = nrow(df_test_all_filtro))
+
+# Calcular el error RMSE
+rmse <- sqrt(mean((naive_forecast$mean - df_test_all_filtro$udsVenta)^2))
+
+# Graficar los resultados
+p <- ggplot(df_test_all_filtro, aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = naive_forecast$mean), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas", 
+       title = "Método Naive")
+
+# Añadimos leyenda del RMSE
+p + annotate("text", 
+             x = min(df_test_all_filtro$Fecha), 
+             y = max(df_test_all_filtro$udsVenta), 
+             label = paste("RMSE:", 
+                           round(rmse, 2)), 
+             hjust = 0, 
+             vjust = 1)
+```
+
+### A nivel producto
+#### Construimos nuestros datasets con pecularidades a nivel producto
+```{r}
+# Guardamos los datasets, esta parte ha sido usado para varias pruebas sin modificar los datos originales
+df_train2 <- df_train
+
+df_test2 <- df_test
+
+# Crearemos listas anidadas, donde cada lista sera un producto, guardamos una serie temporal con las ventas, y los datos necesarios para proximos analisis.
+df_list_train <- split(df_train2, df_train2$producto)
+df_list_test <- split(df_test2, df_test2$producto)
+df_NAIVE <- vector(mode = "list", 
+                   length = length(unique(data_help$producto)))
+
+# Preparamos los diferentes series temporales por producto
+for (i in 1:length(unique(data_help$producto))) {
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_NAIVE[[i]]$data <- ts(df_list_train[[i]]$udsVenta, start = c(2021, 95), frequency = 365)
+  df_NAIVE[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_NAIVE[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_NAIVE[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_NAIVE[[i]]$Producto <- i
+  df_NAIVE[[i]]$data_test <- data.frame(udsVenta = df_list_test[[i]]$udsVenta)
+}
+```
+
+#### NAIVE POR PRDUCTO
+
+```{r}
+NAIVE_rmse_spr <- c()
+NAIVE_mape_spr <- c()
+NAIVE_acc_spr <- c()
+
+# Calculamos el modelo, y el RMSE asociado, guardamos en una lista los RMSE para proximos estudios
+for (i in 1:length(unique(data_help$producto))) {
+  df_NAIVE[[i]]$model_sinpr <- tryCatch(naive(df_NAIVE[[i]]$data, 
+                                              h = nrow(df_NAIVE[[i]]$data_test)),
+                                        error = function(e) NULL)
+  
+  if (!is.null(df_NAIVE[[i]]$model_sinpr)) {
+    df_NAIVE[[i]]$rmse_sinpr <- sqrt(mean((as.vector(df_NAIVE[[i]]$model_sinpr$mean) -
+                                             as.vector(df_NAIVE[[i]]$data_test$udsVenta))^2))
+    NAIVE_rmse_spr <- c(NAIVE_rmse_spr, df_NAIVE[[i]]$rmse_sinpr)
+  }
+}
+
+```
+
+#### Calculos de coste
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio al 95%
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_NAIVE[[i]]$diasLeadtime
+  coste_unitario_pct <- 0.05
+  
+    # Calculamos el stock de seguridad
+  if (!is.null(df_NAIVE[[i]]$model_pr)) {
+    
+    # Calculamos el stock de seguridad para ambos modelos
+    df_NAIVE[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_NAIVE[[i]]$rmse_sinpr * 
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock
+    df_NAIVE[[i]]$coste_stock_sinpr <- coste_unitario_pct * 
+      df_NAIVE[[i]]$eurPrecioMedio * 
+      df_NAIVE[[i]]$stock_seguridad_sinpr
+  }
+}
+
+```
+
+#### PLOTS
+
+```{r}
+# Seleccionamos un producto
+producto <- df_NAIVE[[851]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(time(producto$data), 
+            time(producto$model_sinpr$mean)[1:length(producto$data_test$udsVenta)]),
+  Valor = c(as.vector(producto$data), 
+            as.vector(producto$model_sinpr$mean)[1:length(producto$data_test$udsVenta)]),
+  Tipo  = c(rep("Ventas", 
+                length(producto$data)), 
+            rep("Prediccion", 
+                length(producto$data_test$udsVenta)))
+)
+
+df_plot_test <- data.frame(
+  Fecha = time(producto$model_sinpr$mean)[1:length(producto$data_test$udsVenta)],
+  Valor = c(as.vector(producto$data_test$udsVenta)),
+  Tipo  = c(rep("Ventas", 
+                length(producto$data_test)))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot, 
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+ggplot(df_plot, 
+       aes(x = Fecha, 
+           y = Valor, 
+           color = Tipo, 
+           linewidth = Tipo)) +
+  geom_line() +
+  scale_linewidth_manual(values = c("Prediccion"  = 2,
+                                    "Ventas"      = 0.5, 
+                                    "Ventas Test" = 0.5)) +
+  labs(title = paste("Producto", producto$Producto),
+       y     = "Unidades", 
+       x     = "Fecha", 
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costes de almacenamiento
+df_cost <- data.frame(
+  Tipo  = c("Coste"),
+  Coste = c(producto$coste_stock_sinpr)
+)
+
+ggplot(df_cost, aes(x = Tipo, 
+                    y = Coste, 
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste, 2)),
+            vjust = 0.5, 
+            hjust = 0.5, 
+            color = "black", 
+            size  = 5) +
+  labs(title = paste("Coste de almacenamiento del producto", 
+                     producto$Producto), 
+       y = "Coste", 
+       x = "", 
+       fill = "Tipo") +
+  theme_minimal()
+
+
+```
+
+
+
+
+## Suavizado exponencial
+
+
+### Nivel Global
+
+```{r}
+# Aplicar el suavizado exponencial
+modelo_exp <- ets(df_train_all$udsVenta)
+
+# Generar las predicciones
+predicciones_exp <- forecast(modelo_exp, 
+                             nrow(df_test_all))
+
+# Calcular el RMSE
+rmse_exp <- sqrt(mean((predicciones_exp$mean - df_test_all$udsVenta)^2))
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha         = df_test_all$Fecha, 
+                              udsVenta_pred = predicciones_exp$mean)
+df_all <- rbind(df_train_all, 
+                df_test_all)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all, 
+                     df_predicciones, 
+                     by = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, 
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas", 
+       title = "Método Suavizado Exponencial")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$Fecha), 
+             y = max(df_especial$udsVenta)+500, 
+             label = paste("RMSE:", 
+                           round(rmse_exp, 2)), 
+             hjust = 0, 
+             vjust = 1)
+
+# Autoplot, correspondiente al paquete forecast usado.
+autoplot(modelo_exp)
+```
+
+
+### Nivel global solo con dias abierto
+
+```{r}
+# Aplicar el suavizado exponencial
+modelo_exp <- ets(df_train_all_filtro$udsVenta)
+
+# Generar las predicciones
+predicciones_exp <- forecast(modelo_exp, nrow(df_test_all_filtro))
+
+# Calcular el RMSE
+rmse_exp <- sqrt(mean((predicciones_exp$mean - df_test_all_filtro$udsVenta)^2))
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha         = df_test_all_filtro$Fecha, 
+                              udsVenta_pred = predicciones_exp$mean)
+df_all <- rbind(df_train_all_filtro, 
+                df_test_all_filtro)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all, 
+                     df_predicciones, 
+                     by = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred),
+            color = "red") +
+  labs(x = "Fecha",
+       y = "Unidades Vendidas",
+       title = "Método Suavizado Exponencial")
+
+# Añadir leyenda manualmente
+p + annotate("text", 
+             x = min(df_especial$Fecha), 
+             y = max(df_especial$udsVenta)+500, 
+             label = paste("RMSE:", 
+                           round(rmse_exp, 2)), 
+             hjust = 0, 
+             vjust = 1)
+
+# Autoplot
+autoplot(modelo_exp)
+```
+
+### Nivel producto
+#### Construimos nuestros datasets con pecularidades a nivel producto
+
+```{r}
+# Se copia los datos en otro dataset, por si hacemos otros estudios.
+df_train2 <- df_train
+
+df_test2 <- df_test
+
+# Creamos la lista anidada que contenga lista de cada producto.
+df_list_train <- split(df_train2, 
+                       df_train2$producto)
+df_list_test <- split(df_test2, 
+                      df_test2$producto)
+df_EXPS <- vector(mode = "list",
+                  length = length(unique(data_help$producto)))
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  
+  df_EXPS[[i]]$data <- data.frame(Fecha    = df_list_train[[i]]$Fecha,
+                                  udsVenta = df_list_train[[i]]$udsVenta)
+  
+  df_EXPS[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_EXPS[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_EXPS[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_EXPS[[i]]$Producto <- i
+  
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_EXPS[[i]]$data_test <- data.frame(Fecha = df_list_test[[i]]$Fecha,
+                                       udsVenta   = df_list_test[[i]]$udsVenta)
+}
+```
+
+#### EXPS POR PRDUCTO
+```{r, warning = FALSE}
+EXPS_rmse_spr <- c()
+
+# Creamos la prediccion por cada producto, guardamos los errores en una lista para futuros estudios.
+for (i in 1:length(unique(data_help$producto))) {
+  
+  df_EXPS[[i]]$model_sinpr <- tryCatch(ets(df_EXPS[[i]]$data$udsVenta),
+                      error = function(e) NULL)
+  
+  if (!is.null(df_EXPS[[i]]$model_sinpr)) {
+    
+    df_EXPS[[i]]$pred_sinpr <- forecast(df_EXPS[[i]]$model_sinpr,
+                                        h = nrow(df_EXPS[[1]]$data_tes))
+    
+    df_EXPS[[i]]$rmse_sinpr <- sqrt(mean((as.vector(df_EXPS[[i]]$pred_sinpr$mean) - 
+                                            as.vector(df_EXPS[[i]]$data_test$udsVenta))^2))
+    
+    EXPS_rmse_spr <- c(EXPS_rmse_spr, 
+                       sqrt(mean((as.vector(df_EXPS[[i]]$pred_sinpr$mean) -
+                                    as.vector(df_EXPS[[i]]$data_test$udsVenta))^2)))
+  }
+}
+```
+
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+coste_unitario_pct <- 0.05
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_EXPS[[i]]$diasLeadtime
+  
+  # Calculamos el stock de seguridad
+  if (!is.null(df_EXPS[[i]]$model_sinpr)) {
+    
+    # Calculamos el stock de seguridad
+    df_EXPS[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_EXPS[[i]]$rmse_sinpr * 
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_EXPS[[i]]$coste_stock_sinpr <- coste_unitario_pct * 
+      df_EXPS[[i]]$eurPrecioMedio * 
+      df_EXPS[[i]]$stock_seguridad_sinpr
+  }
+}
+
+```
+
+##### PRUEBAS PLOT
+
+```{r}
+# Seleccionamos un producto
+producto <- df_EXPS[[771]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(producto$data$Fecha, 
+            producto$data_test$Fecha),
+  Valor = c(as.vector(producto$data$udsVenta),
+            as.vector(producto$pred_sinpr$mean)),
+  Tipo = c(rep("Ventas", 
+               length(producto$data$udsVenta)), 
+           rep("Prediccion", 
+               length(producto$pred_sinpr$mean)))
+)
+
+df_plot_test <- data.frame(
+  Fecha = producto$data_test$Fecha,
+  Valor = c(as.vector(producto$data_test$udsVenta)),
+  Tipo  = c(rep("Ventas", 
+                length(producto$data_test$udsVenta)))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot, 
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo, 
+                       levels = c("Ventas", 
+                                  "Prediccion"))
+
+ggplot(df_plot, 
+       aes(x     = Fecha,
+           y     = Valor, 
+           color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Prediccion" = "red", 
+                                "Ventas" = "cyan"), 
+                     breaks = c("Prediccion", 
+                                "Ventas")) +
+  labs(title = paste("Producto",
+                     producto$Producto),
+       y     = "Unidades", 
+       x     = "Fecha", 
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo  = c("Coste"),
+  Coste = c(producto$coste_stock_sinpr)
+)
+
+ggplot(df_cost, aes(x    = Tipo,
+                    y    = Coste, 
+                    fill = Tipo)) +
+geom_bar(stat = "identity") +
+geom_text(aes(label = round(Coste,
+                            2)),
+          vjust = 0.5,
+          hjust = 0.5, 
+          color = "black", 
+          size = 5) +
+labs(title = paste("Coste de almacenamiento del producto",
+                    producto$Producto), 
+      y = "Coste", 
+      x = "", 
+      fill = "Tipo") +
+theme_minimal()
+```
+
+
+## ARIMA / ARIMAX
+
+
+### Nivel Global solo dias abiertos
+```{r}
+# Creacion serie temporal
+serie_train <- ts(df_train_all$udsVenta, 
+                  start = c(2021, 95), 
+                  frequency = 365)
+serie_test <- ts(df_test_all$udsVenta, 
+                 start = c(2023, 01), 
+                 frequency = nrow(df_test_all))
+
+# Creacion del modelo, prediccion de este y RMSE
+arima_all <- auto.arima(serie_test)
+fore_arima_all <- forecast(arima_all, 
+                           h = nrow(df_test_all))
+arima_all_rmse <- sqrt(mean((as.vector(fore_arima_all$mean) -
+                               as.vector(df_test_all$udsVenta))^2))
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha         = df_test_all$Fecha, 
+                              udsVenta_pred = fore_arima_all$mean)
+df_all <- rbind(df_train_all, 
+                df_test_all)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all,
+                     df_predicciones,
+                     by    = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, 
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas",
+       title = "Método Arima")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$Fecha), 
+             y = max(df_especial$udsVenta)+500, 
+             label = paste("RMSE:", 
+                           round(arima_all_rmse, 2)),
+             hjust = 0, 
+             vjust = 1)
+```
+
+
+### Nivel Global dias abiertos
+
+```{r}
+# Creacion serie temporal
+serie_train <- ts(df_train_all_filtro$udsVenta, 
+                  start = c(2021, 95), 
+                  frequency = Dias)
+serie_test <- ts(df_test_all_filtro$udsVenta, 
+                 start = c(2023, 01), 
+                 frequency = nrow(df_test_all))
+
+# Creacion del modelo, prediccion de este y RMSE
+arima_all <- auto.arima(serie_test)
+fore_arima_all <- forecast(arima_all, 
+                           h = nrow(df_test_all_filtro))
+arima_all_rmse <- sqrt(mean((as.vector(fore_arima_all$mean) -
+                               as.vector(df_test_all_filtro$udsVenta))^2))
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha         = df_test_all_filtro$Fecha, 
+                              udsVenta_pred = fore_arima_all$mean)
+df_all <- rbind(df_train_all_filtro, 
+                df_test_all_filtro)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all,
+                     df_predicciones,
+                     by    = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, 
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas",
+       title = "Método Arima")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$Fecha), 
+             y = max(df_especial$udsVenta)+500, 
+             label = paste("RMSE:", 
+                           round(arima_all_rmse, 2)),
+             hjust = 0, 
+             vjust = 1)
+```
+
+### Nivel producto
+#### Construimos nuestros datasets con pecularidades a nivel producto
+```{r}
+# Se copia los datos en otro dataset, por si hacemos otros estudios.
+df_train2 <- df_train
+
+df_test2 <- df_test
+
+# Creamos dos series temporales, una corresponde a las ventas del producto y otra los periodos en ofertas.
+# Todo guardado en la lista de cada producto
+df_list_train <- split(df_train2, 
+                       df_train2$producto)
+df_list_test <- split(df_test2, 
+                      df_test2$producto)
+df_ARIMA <- vector(mode = "list", 
+                   length = length(unique(data_help$producto)))
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  # Serie de entrenamientos, con ventas y promociones
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_ARIMA[[i]]$udsVenta <- ts(df_list_train[[i]]$udsVenta, start = c(2021, 95), frequency = 365)
+  df_ARIMA[[i]]$udsPromo <- ts(df_list_train[[i]]$promo_activated, start = c(2021, 95), frequency = 365)
+  
+  # Variables para usar en el calculo stock
+  df_ARIMA[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_ARIMA[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_ARIMA[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_ARIMA[[i]]$Producto <- i
+  
+  # Series de test
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_ARIMA[[i]]$udsVenta_test <- ts(df_list_test[[i]]$udsVenta, start = c(2023, 01), frequency = 365)
+  df_ARIMA[[i]]$udsPromo_test <- ts(df_list_test[[i]]$promo_activated, start = c(2023, 01), frequency = 365)
+}
+```
+
+#### ARIMA POR PRDUCTO
+```{r, warning = FALSE}
+ARIMAX_rmse_spr <- c()
+ARIMAX_rmse_pr <- c()
+
+# Para identificar aquellos productos que no crean ARIMAX, la variable promociones no ayuda en algunos productos.
+ARIMAX_check <- c()
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  # SIN VARIABLE DE PROMOCIONES
+  df_ARIMA[[i]]$model_sinpr <- tryCatch(auto.arima(df_ARIMA[[i]]$udsVenta),
+                                        error = function(e) NULL)
+  
+  if (!is.null(df_ARIMA[[i]]$model_sinpr)) {
+    df_ARIMA[[i]]$pred_sinpr <- forecast(df_ARIMA[[i]]$model_sinpr,
+                                         h = nrow(df_test2))
+    df_ARIMA[[i]]$rmse_sinpr <- sqrt(mean((as.vector(df_ARIMA[[i]]$pred_sinpr$mean) -
+                                             as.vector(df_ARIMA[[i]]$udsVenta_test))^2))
+    ARIMAX_rmse_spr <- c(ARIMAX_rmse_spr, 
+                         sqrt(mean((as.vector(df_ARIMA[[i]]$pred_sinpr$mean) - 
+                                      as.vector(df_ARIMA[[i]]$udsVenta_test))^2)))
+  }
+  
+  # CON VARIABLE DE PROMOCIONES
+  df_ARIMA[[i]]$model_pr <- tryCatch(auto.arima(df_ARIMA[[i]]$udsVenta, 
+                                                xreg = df_ARIMA[[i]]$udsPromo),
+                                     error = function(e) NULL)
+  
+  if (!is.null(df_ARIMA[[i]]$model_pr)) {
+    df_ARIMA[[i]]$pred_pr <- forecast(df_ARIMA[[i]]$model_pr, 
+                                      h = nrow(df_test2), 
+                                      xreg = df_ARIMA[[i]]$udsPromo_test)
+    df_ARIMA[[i]]$rmse_pr <- sqrt(mean((as.vector(df_ARIMA[[i]]$pred_pr$mean) - 
+                                          as.vector(df_ARIMA[[i]]$udsVenta_test))^2))
+    ARIMAX_rmse_pr <- c(ARIMAX_rmse_pr, 
+                        sqrt(mean((as.vector(df_ARIMA[[i]]$pred_pr$mean) -
+                                     as.vector(df_ARIMA[[i]]$udsVenta_test))^2)))
+    
+  }
+  else{
+    # En caso de que no se pueda incorporar la promocion, lo anotamos y ponemos los datos sin promocion.
+    ARIMAX_check <- c(ARIMAX_check, i)
+    df_ARIMA[[i]]$pred_pr <- df_ARIMA[[i]]$pred_sinpr
+    df_ARIMA[[i]]$rmse_pr <- df_ARIMA[[i]]$rmse_sinpr
+    ARIMAX_rmse_pr <- c(ARIMAX_rmse_pr, 
+                        sqrt(mean((as.vector(df_ARIMA[[i]]$pred_pr$mean) - 
+                                     as.vector(df_ARIMA[[i]]$udsVenta_test))^2)))
+  }
+}
+
+# Cantidad de productos que la promocion ha ayudado en una mejor prediccion. 
+table(ARIMAX_rmse_spr > ARIMAX_rmse_pr)
+```
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+coste_unitario_pct <- 0.05
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_ARIMA[[i]]$diasLeadtime
+  
+  # Calculamos el stock de seguridad sólo si se ha ajustado un modelo
+  if (!is.null(df_ARIMA[[i]]$model_sinpr) | !is.null(df_ARIMA[[i]]$model_pr)) {
+    
+    # Calculamos el stock de seguridad para ambos modelos
+    df_ARIMA[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_ARIMA[[i]]$rmse_sinpr * 
+      sqrt(ciclo_aprovisionamiento)
+    df_ARIMA[[i]]$stock_seguridad_pr <- factor_servicio * 
+      df_ARIMA[[i]]$rmse_pr * 
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_ARIMA[[i]]$coste_stock_sinpr <- coste_unitario_pct *
+      df_ARIMA[[i]]$eurPrecioMedio * 
+      df_ARIMA[[i]]$stock_seguridad_sinpr
+    df_ARIMA[[i]]$coste_stock_pr <- coste_unitario_pct * 
+      df_ARIMA[[i]]$eurPrecioMedio *
+      df_ARIMA[[i]]$stock_seguridad_pr
+  }
+}
+
+```
+
+#### PRUEBAS PLOT
+
+
+```{r}
+# Seleccionamos un producto
+producto <- df_ARIMA[[578]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(time(producto$udsVenta), 
+            time(producto$pred_sinpr$mean)[1:length(producto$udsVenta_test)], 
+            time(producto$pred_pr$mean)[1:length(producto$udsVenta_test)]),
+  Valor = c(as.vector(producto$udsVenta),
+            as.vector(producto$pred_sinpr$mean)[1:length(producto$udsVenta_test)],
+            as.vector(producto$pred_pr$mean)[1:length(producto$udsVenta_test)]),
+  Tipo = c(rep("Ventas",
+               length(producto$udsVenta)), 
+           rep("Pred_sin", 
+               length(producto$udsVenta_test)),
+           rep("Pred_con", 
+               length(producto$udsVenta_test)))
+)
+
+df_plot_test <- data.frame(
+  Fecha = time(producto$udsVenta_test),
+  Valor = c(as.vector(producto$udsVenta_test)),
+  Tipo = c(rep("Ventas", 
+               length(producto$udsVenta_test)))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot, 
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo, 
+                       levels = c("Ventas", 
+                                  "Pred_sin", 
+                                  "Pred_con"))
+
+ggplot(df_plot, aes(x = Fecha,
+                    y = Valor,
+                    color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Pred_sin" = "red",
+                                "Pred_con" = "green",
+                                "Ventas"   = "cyan"),
+                     breaks = c("Pred_sin",
+                                "Pred_con",
+                                "Ventas")) +
+  labs(title = paste("Producto",
+                     producto$Producto), 
+       y = "Unidades", 
+       x = "Fecha", 
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo = c("Coste_sin", 
+           "Coste_con"),
+  Coste = c(producto$coste_stock_sinpr,
+            producto$coste_stock_pr)
+)
+
+ggplot(df_cost, aes(x    = Tipo, 
+                    y    = Coste, 
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste,
+                              2)),
+            vjust = 0.5, 
+            hjust = 0.5, 
+            color = "black", 
+            size  = 5) +
+  labs(title = paste("Coste de almacenamiento del producto",
+                     producto$Producto), 
+       y    = "Coste",
+       x    = "", 
+       fill = "Tipo") +
+  theme_minimal()
+```
+
+
+
+
+## PROPHET
+
+### NIVEL GLOBAL
+
+```{r}
+df_train2 <- data_help %>%
+  filter( Fecha < as.Date("2023-01-01"))
+df_test2 <- data_help %>%
+  filter( Fecha >= as.Date("2023-01-01"))
+
+df_train_all2 <- data_help %>%
+  filter(Fecha < as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    y = sum(udsVenta)
+  )
+
+# Cambio de nombres para aplicar el modelo prophet
+colnames(df_train_all2) <- c("ds", "y")
+
+df_test_all2 <- data_help %>%
+  filter(Fecha >= as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    y = sum(udsVenta)
+  )
+
+# Cambio de nombres para aplicar el modelo prophet
+colnames(df_test_all2) <- c("ds", "y")
+```
+
+```{r}
+# Modelo prophet, predicciones y calculo RMSE
+modelo_prophet_all <- prophet(daily.seasonality = TRUE, 
+                              yearly.seasonality = FALSE)
+
+modelo_prophet_all <- fit.prophet(modelo_prophet_all,
+                                  df_train_all2)
+forecast_prophet_all <- predict(modelo_prophet_all, 
+                                df_test_all2)
+rmse_prophet_all <- sqrt(mean((as.vector(forecast_prophet_all$yhat) -
+                                 as.vector(df_test_all2$y))^2))
+
+plot(modelo_prophet_all, 
+     forecast_prophet_all)
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(ds            = unique(df_test_all2$ds), 
+                              udsVenta_pred = forecast_prophet_all$yhat)
+df_all <- rbind(df_train_all2,
+                df_test_all2)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all,
+                     df_predicciones, 
+                     by = "ds",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial,
+            aes(x = ds)) +
+  geom_line(aes(y = y),
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x     = "Fecha",
+       y     = "Unidades Vendidas", 
+       title = "Método Prophet")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$ds),
+             y = max(df_especial$y)+500, 
+             label = paste("RMSE:", 
+                           round(rmse_prophet_all, 2)),
+             hjust = 0,
+             vjust = 1)
+```
+
+### EXTRA: Analisis de Prophet sin dias abiertos
+
+```{r}
+# Datasets para los datos nuevos, sin dias abiertos
+df_train_all3 <- data_help %>%
+  filter(bolOpen != 0) %>%
+  filter(Fecha < as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    y = sum(udsVenta)
+  )
+
+colnames(df_train_all3) <- c("ds", "y")
+
+df_test_all3 <- data_help %>%
+  filter(bolOpen != 0) %>%
+  filter(Fecha >= as.Date("2023-01-01")) %>%
+  group_by(Fecha) %>%
+  dplyr::summarise(
+    y = sum(udsVenta)
+  )
+
+colnames(df_test_all3) <- c("ds", "y")
+
+# Modelo, prediccion y RMSE
+modelo_prophet_all <- prophet(daily.seasonality = TRUE, 
+                              yearly.seasonality = FALSE)
+
+modelo_prophet_all <- fit.prophet(modelo_prophet_all,
+                                  df_train_all3)
+forecast_prophet_all <- predict(modelo_prophet_all, 
+                                df_test_all3)
+rmse_prophet_all <- sqrt(mean((as.vector(forecast_prophet_all$yhat) - 
+                                 as.vector(df_test_all3$y))^2))
+
+plot(modelo_prophet_all,
+     forecast_prophet_all)
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(ds = unique(df_test_all3$ds), 
+                              udsVenta_pred = forecast_prophet_all$yhat)
+df_all <- rbind(df_train_all3,
+                df_test_all3)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all, 
+                     df_predicciones,
+                     by = "ds",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, aes(x = ds)) +
+  geom_line(aes(y = y),
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas", 
+       title = "Método Prophet")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$ds),
+             y = max(df_especial$y)+500, 
+             label = paste("RMSE:", 
+                           round(rmse_prophet_all, 2)), 
+             hjust = 0, 
+             vjust = 1)
+
+```
+
+
+
+### Nivel Producto
+
+#### Construimos nuestros datasets con pecularidades
+```{r}
+# Se copia los datos en otro dataset, por si hacemos otros estudios.
+df_train2 <- data_help %>%
+  filter( Fecha < as.Date("2023-01-01"))
+df_test2 <- data_help %>%
+  filter( Fecha >= as.Date("2023-01-01"))
+
+
+# Preparamos los datos para el analisis a nivel producto.
+df_list_train <- split(df_train2, 
+                       df_train$producto)
+df_list_test <- split(df_test2, 
+                      df_test$producto)
+df_PROPH <- vector(mode   = "list", 
+                   length = length(unique(data_help$producto)))
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_PROPH[[i]]$datos <- data.frame(ds    = df_list_train[[i]]$Fecha,
+                                    y     = df_list_train[[i]]$udsVenta,
+                                    promo = df_list_train[[i]]$promo_activated)
+  
+  df_PROPH[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_PROPH[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_PROPH[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_PROPH[[i]]$Producto <- i
+  
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_PROPH[[i]]$datos_test <- data.frame(ds    = df_list_test[[i]]$Fecha,
+                                         y     = df_list_test[[i]]$udsVenta,
+                                         promo = df_list_test[[i]]$promo_activated)
+}
+```
+
+#### PROPHET POR PRDUCTO
+```{r, warning = FALSE}
+PROPHET_rmse_spr <- c()
+PROPHET_rmse_pr <- c()
+
+# Para ver el tiempo
+start_time_all <- Sys.time() 
+for (i in 1:length(unique(data_help$producto))) {
+
+  # SIN VARIABLE DE PROMOCIONES
+  datos_sinpromo <- df_PROPH[[i]]$datos %>% 
+    select(-promo)
+  modelo_sinpr <- prophet(daily.seasonality = TRUE,
+                          yearly.seasonality = FALSE)
+  modelo_sinpr <- fit.prophet(modelo_sinpr, 
+                              datos_sinpromo)
+  temps <- make_future_dataframe(modelo_sinpr,
+                                 periods = nrow(df_PROPH[[i]]$datos_test))
+  df_PROPH[[i]]$forecast_sinpr <- predict(modelo_sinpr, temps)
+  df_PROPH[[i]]$rmse_sinpr <- sqrt(mean((as.vector(df_PROPH[[i]]$forecast_sinpr$yhat) - 
+                                           as.vector(df_PROPH[[i]]$datos_test$y))^2))
+  PROPHET_rmse_spr <- c(PROPHET_rmse_spr, 
+                        sqrt(mean((as.vector(df_PROPH[[i]]$forecast_sinpr$yhat) - 
+                                     as.vector(df_PROPH[[i]]$datos_test$y))^2)))
+
+  # CON VARIABLE DE PROMOCIONES
+  modelo_pr <- prophet(daily.seasonality = TRUE, 
+                       yearly.seasonality = FALSE)
+  modelo_pr <- add_regressor(modelo_pr, 
+                             "promo")
+  modelo_pr <- fit.prophet(modelo_pr,
+                           df_PROPH[[i]]$datos)
+  temps <- make_future_dataframe(modelo_pr, 
+                                 periods = nrow(df_PROPH[[i]]$datos_test))
+  temps$promo <- rep(df_PROPH[[i]]$datos$promo, 
+                     length.out = nrow(temps))
+  
+  if (!is.null(modelo_pr)) {
+    df_PROPH[[i]]$forecast_pr <- predict(modelo_pr, temps)
+    df_PROPH[[i]]$rmse_pr <- sqrt(mean((as.vector(df_PROPH[[i]]$forecast_pr$yhat) -
+                                          as.vector(df_PROPH[[i]]$datos_test$y))^2))
+    PROPHET_rmse_pr <- c(PROPHET_rmse_pr,
+                         sqrt(mean((as.vector(df_PROPH[[i]]$forecast_pr$yhat) -
+                                      as.vector(df_PROPH[[i]]$datos_test$y))^2)))
+  }
+
+}
+
+# Calculamos el tiempo transcurrido
+end_time_all <- Sys.time()  
+elapsed_time_all <- end_time_all - start_time_all  
+cat("Tiempo transcurrido:", elapsed_time_all, "minutos\n\n")
+
+table(PROPHET_rmse_spr > PROPHET_rmse_pr)
+table(PROPHET_rmse_spr == PROPHET_rmse_pr)
+table(PROPHET_rmse_spr < PROPHET_rmse_pr)
+```
+
+
+
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+coste_unitario_pct <- 0.05
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_PROPH[[i]]$diasLeadtime
+  
+    # Calculamos el stock de seguridad
+  if (!is.null(df_PROPH[[i]]$forecast_sinpr) | !is.null(df_PROPH[[i]]$forecast_pr)) {
+    
+    # Calculamos el stock de seguridad para ambos modelos
+    df_PROPH[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_PROPH[[i]]$rmse_sinpr * 
+      sqrt(ciclo_aprovisionamiento)
+    df_PROPH[[i]]$stock_seguridad_pr <- factor_servicio * 
+      df_PROPH[[i]]$rmse_pr *
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_PROPH[[i]]$coste_stock_sinpr <- coste_unitario_pct *
+      df_PROPH[[i]]$eurPrecioMedio * 
+      df_PROPH[[i]]$stock_seguridad_sinpr
+    df_PROPH[[i]]$coste_stock_pr <- coste_unitario_pct * 
+      df_PROPH[[i]]$eurPrecioMedio * 
+      df_PROPH[[i]]$stock_seguridad_pr
+  }
+}
+```
+
+#### PLOT
+```{r}
+# Para seleccionar productos aleatorios
+# numero <- sample(which(PROPHET_rmse_spr > PROPHET_rmse_pr),1)
+# numero <- sample(which(PROPHET_rmse_spr < PROPHET_rmse_pr),1)
+# numero <- sample(which(PROPHET_rmse_spr == PROPHET_rmse_pr),1)
+
+# Seleccionamos un producto
+producto <- df_PROPH[[78]]
+
+# El forecast de prophet realiza prediccion en todos los intervalos de tiempo.
+pred_sinpr <- producto$forecast_sinpr %>%
+  filter(ds %in% unique(df_test2$Fecha)) %>%
+  dplyr::select(ds, yhat)
+
+pred_pr <- producto$forecast_sinpr %>%
+  filter(ds %in% unique(df_test2$Fecha)) %>%
+  dplyr::select(ds, yhat)
+
+
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(unique(df_train2$Fecha),
+            unique(df_test2$Fecha), 
+            unique(df_test2$Fecha)),
+  Valor = c(as.vector(producto$datos$y), 
+            as.vector(pred_sinpr$yhat), 
+            as.vector(pred_pr$yhat)),
+  Tipo = c(rep("Ventas", 
+               length(producto$datos$y)), 
+           rep("Pred_sin", 
+               length(unique(df_test2$Fecha))),
+           rep("Pred_con", 
+               length(unique(df_test2$Fecha))))
+)
+
+df_plot_test <- data.frame(
+  Fecha = unique(df_test2$Fecha),
+  Valor = c(as.vector(producto$datos_test$y)),
+  Tipo  = c(rep("Ventas", 
+                length(unique(df_test2$Fecha))))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot,
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo,
+                       levels = c("Ventas", 
+                                  "Pred_sin",
+                                  "Pred_con"))
+
+ggplot(df_plot, aes(x = Fecha,
+                    y = Valor,
+                    color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Pred_sin" = "red",
+                                "Pred_con" = "white", 
+                                "Ventas" = "cyan"), 
+                     breaks = c("Pred_sin",
+                                "Pred_con",
+                                "Ventas")) +
+  labs(title = paste("Producto",
+                     producto$Producto),
+       y = "Unidades",
+       x = "Fecha",
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo = c("Coste_sin", 
+           "Coste_con"),
+  Coste = c(producto$coste_stock_sinpr, 
+            producto$coste_stock_pr)
+)
+
+ggplot(df_cost, aes(x = Tipo, 
+                    y = Coste, 
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste, 2)),
+            vjust = 0.5, 
+            hjust = 0.5,
+            color = "black", 
+            size = 5) +
+  labs(title = paste("Coste de almacenamiento del producto", 
+                     producto$Producto),
+       y = "Coste",
+       x = "",
+       fill = "Tipo") +
+  theme_minimal()
+```
+
+## Arboles de decision (GBM)
+### Crearemos los datasets para este modelo
+
+```{r}
+df_train_gbm <- df_train %>% 
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha,
+                      label = FALSE)
+  ) %>%
+  select(-Fecha)
+
+df_test_gbm <- df_test %>%
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha, 
+                      label = FALSE)
+  ) %>%
+  select(-Fecha)
+```
+
+### GBM a nivel global
+
+```{r, warning=FALSE}
+# Dataset a nivel global
+df_train_gbm_all <- df_train_gbm %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta   = sum(udsVenta),
+    bolOpen    = bolOpen,
+    bolHoliday = bolHoliday
+  ) %>%
+  distinct()
+
+df_test_gbm_all <- df_test_gbm %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta   = sum(udsVenta),
+    bolOpen    = bolOpen,
+    bolHoliday = bolHoliday
+  ) %>%
+  distinct()
+
+# Aplicamos el modelo a datos nivel global
+model_gbm <- gbm(udsVenta ~., 
+                 data         = df_train_gbm_all,
+                 distribution = "gaussian")
+predicted_gbm <- predict(model_gbm,
+                         newdata = df_test_gbm_all)
+
+# Calcular el error RMSE
+rmse <- sqrt(mean((predicted_gbm - df_test_gbm_all$udsVenta)^2))
+
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha = df_test_all$Fecha, 
+                              udsVenta_pred = predicted_gbm)
+df_all <- rbind(df_train_all, 
+                df_test_all)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all, 
+                     df_predicciones, 
+                     by = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial,
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x     = "Fecha", y = "Unidades Vendidas", 
+       title = "Método Arbol de Decision")
+
+# Añadir leyenda RMSE
+p + annotate("text", 
+             x = min(df_especial$Fecha), 
+             y = max(df_especial$udsVenta)+500, 
+             label = paste("RMSE:", 
+                           round(rmse, 2)), 
+             hjust = 0, 
+             vjust = 1)
+```
+
+
+
+### Nivel producto
+#### Creacion de los datos
+```{r}
+df_list_train <- split(df_train_gbm,
+                       df_train$producto)
+df_list_test <- split(df_test_gbm, 
+                      df_test$producto)
+df_GBM <- vector(mode = "list", 
+                 length = 1000)
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_GBM[[i]]$sinpr <- data.frame(df_list_train[[i]]$dia, 
+                                  df_list_train[[i]]$mes, 
+                                  df_list_train[[i]]$any, 
+                                  df_list_train[[i]]$bolOpen, 
+                                  df_list_train[[i]]$bolHoliday, 
+                                  df_list_train[[i]]$udsVenta)
+  names(df_GBM[[i]]$sinpr) <- c("dia", 
+                                "mes", 
+                                "any", 
+                                "obert", 
+                                "holiday",
+                                "venta")
+  df_GBM[[i]]$pr <- data.frame(df_list_train[[i]]$dia, 
+                               df_list_train[[i]]$mes,
+                               df_list_train[[i]]$any,
+                               df_list_train[[i]]$bolOpen,
+                               df_list_train[[i]]$bolHoliday
+                               , df_list_train[[i]]$udsVenta, 
+                               df_list_train[[i]]$promo_activated)
+  names(df_GBM[[i]]$pr) <- c("dia",
+                             "mes", 
+                             "any", 
+                             "obert",
+                             "holiday",
+                             "venta", 
+                             "promo")
+  
+  df_GBM[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_GBM[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_GBM[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_GBM[[i]]$Producto <- i
+  
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_GBM[[i]]$sinpr_test <- data.frame(df_list_test[[i]]$dia,
+                                       df_list_test[[i]]$mes,
+                                       df_list_test[[i]]$any, 
+                                       df_list_test[[i]]$bolOpen,
+                                       df_list_test[[i]]$bolHoliday,
+                                       df_list_test[[i]]$udsVenta)
+  names(df_GBM[[i]]$sinpr_test) <- c("dia", 
+                                     "mes", 
+                                     "any", 
+                                     "obert",
+                                     "holiday", 
+                                     "venta")
+  df_GBM[[i]]$pr_test <- data.frame(df_list_test[[i]]$dia, 
+                                    df_list_test[[i]]$mes,
+                                    df_list_test[[i]]$any,
+                                    df_list_test[[i]]$bolOpen,
+                                    df_list_test[[i]]$bolHoliday,
+                                    df_list_test[[i]]$udsVenta,
+                                    df_list_test[[i]]$promo_activated)
+  names(df_GBM[[i]]$pr_test) <- c("dia",
+                                  "mes", 
+                                  "any", 
+                                  "obert",
+                                  "holiday",
+                                  "venta",
+                                  "promo")
+}
+```
+
+#### Aplicacion de los modelos y calculo de stock
+
+```{r, warning = FALSE, message = FALSE}
+GBM_rmse_spr <- c()
+GBM_rmse_pr <- c()
+
+# Captura el tiempo de inicio
+start_time_all <- Sys.time()  
+
+for (i in 1:length(unique(data_help$producto))) {
+  # GBM sin promociones
+  df_GBM[[i]]$gbm_sinpr <- gbm(venta ~.,
+                               data = df_GBM[[i]]$sinpr,
+                               distribution = "gaussian")
+  
+  df_GBM[[i]]$predict_gbm_sinpr <- predict(df_GBM[[i]]$gbm_sinpr,
+                                           newdata = df_GBM[[i]]$sinpr_test)
+  df_GBM[[i]]$rmse_gbm_sinpr <- sqrt(mean((df_GBM[[i]]$sinpr_test$venta -
+                                            df_GBM[[i]]$predict_gbm_sinpr)^2))
+  GBM_rmse_spr <- c(GBM_rmse_spr, 
+                    sqrt(mean((df_GBM[[i]]$sinpr_test$venta -
+                                 df_GBM[[i]]$predict_gbm_sinpr)^2)))
+  
+  # GBM con promociones
+  df_GBM[[i]]$gbm_pr <- gbm(venta ~.,
+                               data = df_GBM[[i]]$pr,
+                               distribution = "gaussian")
+  df_GBM[[i]]$predict_gbm_pr <- predict(df_GBM[[i]]$gbm_pr,
+                                           newdata = df_GBM[[i]]$pr_test)
+  
+    df_GBM[[i]]$rmse_gbm_pr <- sqrt(mean((df_GBM[[i]]$pr_test$venta -
+                                            df_GBM[[i]]$predict_gbm_pr)^2))
+    GBM_rmse_pr <- c(GBM_rmse_pr, 
+                     sqrt(mean((df_GBM[[i]]$pr_test$venta -
+                                  df_GBM[[i]]$predict_gbm_pr)^2)))
+}
+
+# Calcula el tiempo transcurrido
+end_time_all <- Sys.time()
+elapsed_time_all <- end_time_all - start_time_all  
+cat("Tiempo transcurrido:", elapsed_time_all, "segundos\n\n")
+```
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+coste_unitario_pct <- 0.05
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_GBM[[i]]$diasLeadtime
+  
+  if (!is.null(df_GBM[[i]]$gbm_sinpr) | !is.null(df_GBM[[i]]$gbm_pr)) {
+    # Calculamos el stock de seguridad para ambos modelos
+    df_GBM[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_GBM[[i]]$rmse_gbm_sinpr *
+      sqrt(ciclo_aprovisionamiento)
+    df_GBM[[i]]$stock_seguridad_pr <- factor_servicio * 
+      df_GBM[[i]]$rmse_gbm_pr * 
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_GBM[[i]]$coste_stock_sinpr <- coste_unitario_pct *
+      df_GBM[[i]]$eurPrecioMedio *
+      df_GBM[[i]]$stock_seguridad_sinpr
+    df_GBM[[i]]$coste_stock_pr <- coste_unitario_pct *
+      df_GBM[[i]]$eurPrecioMedio * 
+      df_GBM[[i]]$stock_seguridad_pr
+  }
+}
+
+# Tabla comparativa de RMSE
+table(GBM_rmse_spr < GBM_rmse_pr)
+table(GBM_rmse_spr == GBM_rmse_pr)
+```
+
+
+
+#### PLOT
+```{r}
+# Seleccion aleatoria
+# produc <- sample(which(GBM_rmse_spr < GBM_rmse_pr),1)
+# produc <- sample(which(GBM_rmse_spr > GBM_rmse_pr),1)
+
+# Seleccionamos un producto
+producto <- df_GBM[[357]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(unique(df_train$Fecha),
+            unique(df_test$Fecha),
+            unique(df_test$Fecha)),
+  Valor = c(as.vector(producto$sinpr$venta), 
+            as.vector(producto$predict_gbm_sinpr), 
+            as.vector(producto$predict_gbm_pr)),
+  Tipo = c(rep("Ventas", 
+               length(producto$sinpr$venta)),
+           rep("Pred_sin", 
+               length( unique(df_test$Fecha))),
+           rep("Pred_con", 
+               length( unique(df_test$Fecha))))
+)
+
+df_plot_test <- data.frame(
+  Fecha = unique(df_test$Fecha),
+  Valor = c(as.vector(producto$sinpr_test$venta)),
+  Tipo  = c(rep("Ventas", 
+                length(producto$sinpr_test$venta)))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot,
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo,
+                       levels = c("Ventas", 
+                                  "Pred_sin",
+                                  "Pred_con"))
+
+ggplot(df_plot, 
+       aes(x = Fecha, 
+           y = Valor,
+           color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Pred_sin" = "red",
+                                "Pred_con" = "green",
+                                "Ventas"   = "cyan"), 
+                     breaks = c("Pred_sin",
+                                "Pred_con",
+                                "Ventas")) +
+  labs(title = paste("Producto", 
+                     producto$Producto), 
+       y     = "Unidades", 
+       x     = "Fecha", 
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo = c("Coste_sin",
+           "Coste_con"),
+  Coste = c(producto$coste_stock_sinpr,
+            producto$coste_stock_pr)
+)
+
+ggplot(df_cost, aes(x = Tipo, 
+                    y = Coste,
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste, 2)), 
+            vjust = 0.5, 
+            hjust = 0.5, 
+            color = "black",
+            size = 5) +
+  labs(title = paste("Coste de almacenamiento del producto",
+                     producto$Producto),
+       y = "Coste", 
+       x = "", 
+       fill = "Tipo") +
+  theme_minimal()
+```
+
+## REDES NEURONALES ARTIFICIALES
+
+### Nivell Global
+```{r, warning = FALSE}
+# Creacion de datasets, a nivel producto y global
+df_train_red <- df_train %>% 
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha, label = FALSE)
+  ) %>%
+  select(-Fecha)
+
+df_test_red <- df_test %>%
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha, label = FALSE)
+  ) %>%
+  select(-Fecha)
+
+df_train_red_all <- df_train_red %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta),
+    bolOpen = bolOpen,
+    bolHoliday = bolHoliday,
+    dia_semana = dia_semana
+  ) %>%
+  distinct()
+
+df_test_red_all <- df_test_red %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta = sum(udsVenta),
+    bolOpen = bolOpen,
+    bolHoliday = bolHoliday,
+    dia_semana = dia_semana
+  ) %>%
+  distinct()
+
+
+# Preparamos los datos
+train_data <- data.frame(
+  x1 = df_train_red_all$dia,
+  x2 = df_train_red_all$mes,
+  x3 = df_train_red_all$any,
+  x4 = df_train_red_all$bolOpen,
+  x5 = df_train_red_all$dia_semana,
+  y = df_train_red_all$udsVenta
+)
+
+test_data <- data.frame(
+  x1 = df_test_red_all$dia,
+  x2 = df_test_red_all$mes,
+  x3 = df_test_red_all$any,
+  x4 = df_test_red_all$bolOpen,
+  x5 = df_test_red_all$dia_semana
+)
+
+# Reescalado de datos para las redes neuronales
+train_data_scaled <- as.data.frame(lapply(train_data, 
+                                          rescale))
+test_data_scaled <- as.data.frame(lapply(test_data, 
+                                         rescale))
+
+# Entrenamos una red neuronal, con dos capas ocultas, una de 5 neuronas y otra de 3
+neuralnet_model <- neuralnet(
+  y ~ x1 + x2 + x3 + x4 + x5, 
+  data   = train_data_scaled, 
+  hidden = c(5, 3)
+)
+
+# Predicciones de la red neuronal
+predictions <- compute(neuralnet_model, 
+                       test_data_scaled)
+
+predicted_values_scaled <- predictions$net.result
+
+# Destransformamos las predicciones, escala original
+predicted_values <- predicted_values_scaled *
+  (max(train_data$y) -
+     min(train_data$y)) + 
+  min(train_data$y)
+
+# Calculo del error RMSE
+rmse <- sqrt(mean((predicted_values - df_test_red_all$udsVenta)^2))
+
+# Creacion de un dataframe de predicciones
+df_predicciones <- data.frame(Fecha = unique(df_test$Fecha), 
+                              udsVenta_pred = predicted_values)
+
+df_train_red_all$Fecha <-  unique(df_train$Fecha)
+
+df_test_red_all$Fecha <- unique(df_test$Fecha)
+
+# Combinacion de dataframes
+df_all <- rbind(df_train_red_all, 
+                df_test_all)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all,
+                     df_predicciones,
+                     by = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, 
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta),
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred),
+            color = "red") +
+  labs(x = "Fecha",
+       y = "Unidades Vendidas",
+       title = "Método Red Neuronal Artificial")
+
+p + annotate("text", 
+             x = min(df_all$Fecha), 
+             y = max(df_all$udsVenta) + 500, 
+             label = paste("RMSE:",
+                           round(rmse, 2)),
+             hjust = 0, 
+             vjust = 1)
+
+```
+
+### A NIVEL PRODUCTO
+
+#### Arreglo datos
+```{r}
+df_list_train <- split(df_train_red, 
+                       df_train$producto)
+df_list_test <- split(df_test_red, 
+                      df_test$producto)
+df_RED <- vector(mode = "list",
+                 length = 1000)
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_RED[[i]]$sinpr <- data.frame(
+  x1 = df_list_train[[i]]$dia,
+  x2 = df_list_train[[i]]$mes,
+  x3 = df_list_train[[i]]$any,
+  x4 = df_list_train[[i]]$bolOpen,
+  x5 = df_list_train[[i]]$dia_semana,
+  y = df_list_train[[i]]$udsVenta
+)
+  df_RED[[i]]$pr <- data.frame(
+  x1 = df_list_train[[i]]$dia,
+  x2 = df_list_train[[i]]$mes,
+  x3 = df_list_train[[i]]$any,
+  x4 = df_list_train[[i]]$bolOpen,
+  x5 = df_list_train[[i]]$dia_semana,
+  x6 = df_list_train[[i]]$promo_activated,
+  y = df_list_train[[i]]$udsVenta
+)
+  df_RED[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_RED[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_RED[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_RED[[i]]$Producto <- i
+  
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_RED[[i]]$sinpr_test <- data.frame(
+  x1 = df_list_test[[i]]$dia,
+  x2 = df_list_test[[i]]$mes,
+  x3 = df_list_test[[i]]$any,
+  x4 = df_list_test[[i]]$producto,
+  x5 = df_list_test[[i]]$bolOpen,
+  x6 = df_list_test[[i]]$dia_semana,
+  y = df_list_test[[i]]$udsVenta
+)
+  df_RED[[i]]$pr_test <- data.frame(
+  x1 = df_list_test[[i]]$dia,
+  x2 = df_list_test[[i]]$mes,
+  x3 = df_list_test[[i]]$any,
+  x4 = df_list_test[[i]]$producto,
+  x5 = df_list_test[[i]]$bolOpen,
+  x6 = df_list_test[[i]]$dia_semana,
+  x7 = df_list_test[[i]]$promo_activated,
+  y = df_list_test[[i]]$udsVenta
+)
+}
+```
+
+#### Aplicamos red neuronal por producto y calculo del stock
+
+```{r, warning = FALSE}
+RED_rmse_spr <- c()
+RED_rmse_pr <- c()
+RED_check <- c()
+
+# Captura el tiempo de inicio
+start_time_all <- Sys.time()  
+
+for (i in 1:length(unique(data_help$producto))) {
+  # Sin promocion
+  # Rescalamos a 0,1
+  train_data_scaled <- as.data.frame(lapply(df_RED[[i]]$sinpr, 
+                                            rescale))
+  test_data_scaled <- as.data.frame(lapply(df_RED[[i]]$sinpr_test,
+                                           rescale))
+  
+  df_RED[[i]]$model_sinpr <- neuralnet(
+  y ~ x1 + x2 + x3 + x4 + x5,
+  data = train_data_scaled,
+  hidden = c(5, 3)
+)
+  df_RED[[i]]$pred_sinpr <- tryCatch(compute(df_RED[[i]]$model_sinpr, 
+                                             test_data_scaled),
+                                     error = function(e) NULL)
+  
+  # Con Promocion
+  train_data_scaled2 <- as.data.frame(lapply(df_RED[[i]]$pr, rescale))
+  test_data_scaled2 <- as.data.frame(lapply(df_RED[[i]]$pr_test, rescale))
+  
+  
+  df_RED[[i]]$model_pr <- neuralnet(
+  y ~ x1 + x2 + x3 + x4 + x5 + x6,
+  data = train_data_scaled2,
+  hidden = c(5, 3)
+  )
+  
+ 
+  df_RED[[i]]$pred_pr <- tryCatch(compute(df_RED[[i]]$model_pr, test_data_scaled2),
+                                  error = function(e) NULL)
+  
+  # Si solo tenemos los dos modelos calculamos el RMSE
+  if (!is.null(df_RED[[i]]$pred_sinpr) | !is.null(df_RED[[i]]$pred_pr)) {
+    
+    # Ponemos las predicciones en la escala correcta
+    df_RED[[i]]$pred_sinpr <- df_RED[[i]]$pred_sinpr$net.result * 
+      (max(df_RED[[i]]$sinpr$y) - 
+         min(df_RED[[i]]$sinpr$y)) +
+      min(df_RED[[i]]$sinpr$y)
+    df_RED[[i]]$pred_pr <- df_RED[[i]]$pred_pr$net.result * 
+      (max(df_RED[[i]]$pr$y) -
+         min(df_RED[[i]]$pr$y)) +
+      min(df_RED[[i]]$pr$y)
+    
+    # Comprobar que productos han conseguido ejecutar el modelo
+    RED_check <- c(RED_check, i)
+    
+    df_RED[[i]]$rmse_gbm_sinpr <- sqrt(mean((df_RED[[i]]$sinpr_test$y -
+                                                 df_RED[[i]]$pred_sinpr)^2))
+    RED_rmse_spr <- c(RED_rmse_spr, 
+                      sqrt(mean((df_RED[[i]]$sinpr_test$y -
+                                   df_RED[[i]]$pred_sinpr)^2)))
+    
+    df_RED[[i]]$rmse_gbm_pr <- sqrt(mean((df_RED[[i]]$pr_test$y -
+                                                 df_RED[[i]]$pred_pr)^2))
+    RED_rmse_pr <- c(RED_rmse_pr, 
+                     sqrt(mean((df_RED[[i]]$pr_test$y -
+                                  df_RED[[i]]$pred_pr)^2)))
+    
+  }
+
+}
+
+# Calcula el tiempo transcurrido
+end_time_all <- Sys.time()
+elapsed_time_all <- end_time_all - start_time_all  
+cat("Tiempo transcurrido:", elapsed_time_all, "horas\n\n")
+```
+
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+ coste_unitario_pct <- 0.05
+
+for (i in 1:length(unique(data_help$producto))) {
+  
+  ciclo_aprovisionamiento <- df_RED[[i]]$diasLeadtime
+
+  if (!is.null(df_RED[[i]]$pred_sinpr) | !is.null(df_RED[[i]]$pred_pr)) {
+    # Calculamos el stock de seguridad para ambos modelos
+    df_RED[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_RED[[i]]$rmse_gbm_sinpr * 
+      sqrt(ciclo_aprovisionamiento)
+    df_RED[[i]]$stock_seguridad_pr <- factor_servicio * 
+      df_RED[[i]]$rmse_gbm_pr * 
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_RED[[i]]$coste_stock_sinpr <- coste_unitario_pct * 
+      df_RED[[i]]$eurPrecioMedio * 
+      df_RED[[i]]$stock_seguridad_sinpr
+    df_RED[[i]]$coste_stock_pr <- coste_unitario_pct * 
+      df_RED[[i]]$eurPrecioMedio *
+      df_RED[[i]]$stock_seguridad_pr
+  }
+}
+
+```
+
+#### PLOT
+```{r}
+# Numero aleatorio
+# numero <- sample(which(RED_rmse_spr > RED_rmse_pr),1)
+# numero <- sample(which(RED_rmse_spr < RED_rmse_pr),1)
+# numero <- sample(which(RED_rmse_spr == RED_rmse_pr),1)
+
+# Seleccionamos un producto
+producto <- df_RED[[578]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(unique(df_train$Fecha), 
+            unique(df_test$Fecha), 
+            unique(df_test$Fecha)),
+  Valor = c(as.vector(producto$sinpr$y), 
+            as.vector(producto$pred_sinpr),
+            as.vector(producto$pred_pr)),
+  Tipo = c(rep("Ventas",
+               length(unique(df_train$Fecha))),
+           rep("Pred_sin",
+               length( unique(df_test$Fecha))), 
+           rep("Pred_con", 
+               length( unique(df_test$Fecha))))
+)
+
+df_plot_test <- data.frame(
+  Fecha = unique(df_test$Fecha),
+  Valor = c(as.vector(producto$sinpr_test$y)),
+  Tipo  = c(rep("Ventas",
+                length((producto$sinpr_test$y))))
+)
+
+# Combinar los dos dataframes para el grafico
+df_plot <- rbind(df_plot, 
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo, 
+                       levels = c("Ventas", 
+                                  "Pred_sin", 
+                                  "Pred_con"))
+
+ggplot(df_plot, aes(x = Fecha, 
+                    y = Valor, 
+                    color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Pred_sin" = "red",
+                                "Pred_con" = "green", 
+                                "Ventas" = "cyan"), 
+                     breaks = c("Pred_sin",
+                                "Pred_con", 
+                                "Ventas")) +
+  labs(title = paste("Producto", 
+                     producto$Producto),
+       y = "Unidades", 
+       x = "Fecha", 
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo = c("Coste_sin", 
+           "Coste_con"),
+  Coste = c(producto$coste_stock_sinpr, 
+            producto$coste_stock_pr)
+)
+
+ggplot(df_cost, aes(x = Tipo, 
+                    y = Coste, 
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste, 2)), 
+            vjust = 0.5,
+            hjust = 0.5, 
+            color = "black",
+            size = 5) +
+  labs(title = paste("Coste de almacenamiento del producto", 
+                     producto$Producto), 
+       y = "Coste", 
+       x = "",
+       fill = "Tipo") +
+  theme_minimal()
+```
+
+
+
+
+## REDES NEURONALES RECURRENTES
+
+NOTA: Para realizar esta ejecucion en R, sera necesario tener instalado miniconda, tensorflow y keras, si no, no se podra usar esta parte de codigo
+
+### Nivel Global
+```{r, warning = FALSE}
+# Creacion de los datasets a nivel producto y global
+df_train_rnn <- df_train %>% 
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha, label = FALSE)
+  ) %>%
+  select(-Fecha)
+
+df_test_rnn <- df_test %>%
+  mutate(
+    dia = day(Fecha),
+    mes = month(Fecha),
+    any = year(Fecha),
+    dia_semana = wday(Fecha, label = FALSE)
+  ) %>%
+  select(-Fecha)
+
+df_train_rnn_all <- df_train_rnn %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta   = sum(udsVenta),
+    bolOpen    = bolOpen,
+    bolHoliday = bolHoliday,
+    dia_semana = dia_semana
+  ) %>%
+  distinct()
+
+df_test_rnn_all <- df_test_rnn %>%
+  dplyr::group_by(dia, mes, any) %>%
+  dplyr::summarise(
+    udsVenta   = sum(udsVenta),
+    bolOpen    = bolOpen,
+    bolHoliday = bolHoliday,
+    dia_semana = dia_semana
+  ) %>%
+  distinct()
+
+```
+
+```{r, warning = FALSE}
+
+# Preparacion de los datos de entrenamiento
+train_data <- df_train_rnn_all %>%
+  arrange(any, mes, dia) %>%
+  select(dia, mes, any, udsVenta, bolOpen, bolHoliday, dia_semana) %>%
+  distinct()
+
+# Preparacion de los datos de prueba
+test_data <- df_test_rnn_all %>%
+  arrange(any, mes, dia) %>%
+  select(dia, mes, any, udsVenta, bolOpen, bolHoliday, dia_semana) %>%
+  distinct()
+
+# Aplicar escala mínima y máxima (min-max scaling) a los datos de entrenamiento y prueba
+train_data_scaled <- as.data.frame(lapply(train_data, 
+                                          rescale))
+test_data_scaled <- as.data.frame(lapply(test_data,
+                                         rescale))
+
+# Preparar los datos de entrenamiento y prueba, extraemos la columna de udsVenta
+train_input <- as.matrix(train_data_scaled[, -4])
+train_output <- train_data_scaled$udsVenta 
+test_input <- as.matrix(test_data_scaled[, -4])
+
+# Construcción del modelo, input_shape = c(entrada,salida)
+model <- keras_model_sequential()
+model %>% 
+  layer_lstm(units       = 64, 
+             input_shape = c(6, 1)) %>% 
+  layer_dense(units = 1)
+
+# Compilación del modelo
+model %>% compile(
+  loss = "mean_squared_error",
+  optimizer = optimizer_adam()
+)
+
+# Entrenamiento del modelo
+model %>% fit(
+  x = array(train_input, 
+            dim = c(nrow(train_input), 6, 1)),
+  y = train_output,
+  epochs     = 50,
+  batch_size = 32,
+  verbose    = 0
+)
+
+# Predicción del modelo
+predictions_scaled <- model %>% 
+  predict(array(test_input, 
+                dim = c(nrow(test_input), 6, 1))) 
+
+# Escalar las predicciones inversamente para obtener valores originales
+predictions <- predictions_scaled *
+  (max(train_data$udsVenta) -
+     min(train_data$udsVenta)) +
+  min(train_data$udsVenta)
+
+# Evaluacion del modelo
+rmse <- sqrt(mean((predictions - test_data$udsVenta)^2))
+
+# Crear un dataframe de predicciones
+df_predicciones <- data.frame(Fecha = unique(df_test$Fecha),
+                              udsVenta_pred = predictions)
+df_train_rnn_all$Fecha <- unique(df_train$Fecha)
+df_test_rnn_all$Fecha  <- unique(df_test$Fecha)
+
+# Combinar predicciones con datos originales
+df_all <- rbind(df_train_rnn_all,
+                df_test_all)
+
+# Crear un dataframe con todos los datos
+df_especial <- merge(df_all, 
+                     df_predicciones, 
+                     by = "Fecha",
+                     all.x = TRUE)
+
+# Graficar los resultados
+p <- ggplot(df_especial, 
+            aes(x = Fecha)) +
+  geom_line(aes(y = udsVenta), 
+            color = "blue") +
+  geom_line(aes(y = udsVenta_pred), 
+            color = "red") +
+  labs(x = "Fecha", 
+       y = "Unidades Vendidas", 
+       title = "Método Red Neuronal Recurrente")
+
+p + annotate("text",
+             x = min(df_all$Fecha), 
+             y = max(df_all$udsVenta) + 500, 
+             label = paste("RMSE:",
+                           round(rmse, 2)),
+             hjust = 0,
+             vjust = 1)
+
+```
+
+
+### A NIVEL PRODUCTO
+
+#### Arreglo datos
+```{r}
+df_list_train <- split(df_train_rnn, df_train$producto)
+df_list_test <- split(df_test_rnn, df_test$producto)
+df_REDN <- vector(mode = "list", length = 1000)
+
+# Preparamos los diferentes datasets
+for (i in 1:length(unique(data_help$producto))) {
+  df_list_train[[i]] <- as.list(df_list_train[[i]])
+  df_REDN[[i]]$sinpr <- data.frame(
+  x1 = df_list_train[[i]]$dia,
+  x2 = df_list_train[[i]]$mes,
+  x3 = df_list_train[[i]]$any,
+  x4 = df_list_train[[i]]$producto,
+  x5 = df_list_train[[i]]$bolOpen,
+  x6 = df_list_train[[i]]$dia_semana,
+  x7 = df_list_train[[i]]$promo_activated,
+  y  = df_list_train[[i]]$udsVenta
+)
+  
+  df_REDN[[i]]$pr <- data.frame(
+  x1 = df_list_train[[i]]$dia,
+  x2 = df_list_train[[i]]$mes,
+  x3 = df_list_train[[i]]$any,
+  x4 = df_list_train[[i]]$producto,
+  x5 = df_list_train[[i]]$bolOpen,
+  x6 = df_list_train[[i]]$dia_semana,
+  x7 = df_list_train[[i]]$promo_activated,
+  y  = df_list_train[[i]]$udsVenta
+)
+    
+  df_REDN[[i]]$diasEntrePedidos <- mean(df_list_train[[i]]$diasEntrePedido)
+  df_REDN[[i]]$diasLeadtime <- mean(df_list_train[[i]]$diasLeadtime)
+  df_REDN[[i]]$eurPrecioMedio <- mean(df_list_train[[i]]$eurPrecioMedio)
+  df_REDN[[i]]$Producto <- i
+  
+  df_list_test[[i]] <- as.list(df_list_test[[i]])
+  df_REDN[[i]]$sinpr_test <- data.frame(
+  x1 = df_list_test[[i]]$dia,
+  x2 = df_list_test[[i]]$mes,
+  x3 = df_list_test[[i]]$any,
+  x4 = df_list_test[[i]]$producto,
+  x5 = df_list_test[[i]]$bolOpen,
+  x6 = df_list_test[[i]]$dia_semana,
+  y  = df_list_test[[i]]$udsVenta
+)
+  
+  df_REDN[[i]]$pr_test <- data.frame(
+  x1 = df_list_test[[i]]$dia,
+  x2 = df_list_test[[i]]$mes,
+  x3 = df_list_test[[i]]$any,
+  x4 = df_list_test[[i]]$producto,
+  x5 = df_list_test[[i]]$bolOpen,
+  x6 = df_list_test[[i]]$dia_semana,
+  x7 = df_list_test[[i]]$promo_activated,
+  y  = df_list_test[[i]]$udsVenta
+)
+}
+```
+
+
+```{r, warning = FALSE}
+REDN_rmse_spr <- c()
+REDN_rmse_pr <- c()
+REDN_check <- c()
+
+# Captura el tiempo de inicio
+start_time_all <- Sys.time()  
+
+for (i in 1:length(unique(data_help$producto))) {
+  # Sin promocion
+  # Aplicar escala mínima y máxima (min-max scaling) a los datos de entrenamiento y prueba
+  train_data_scaled_sinpr <- as.data.frame(lapply(df_REDN[[i]]$sinpr, 
+                                                  rescale))
+  test_data_scaled_sinpr <- as.data.frame(lapply(df_REDN[[i]]$sinpr_test, 
+                                                 rescale))
+  
+  # Preparar los datos de entrenamiento y prueba
+  train_input <- as.matrix(train_data_scaled_sinpr[, -which(names(train_data_scaled_sinpr) == "y")])  
+  
+  train_output_sinpr <- train_data_scaled_sinpr$y 
+  
+  test_input <- as.matrix(test_data_scaled_sinpr[, -which(names(test_data_scaled_sinpr) == "y")]) 
+  
+  
+  # Construcción del modelo sin promoción
+  df_REDN[[i]]$model_sinpr <- keras_model_sequential()
+  
+  df_REDN[[i]]$model_sinpr %>% 
+  layer_lstm(units = 64, input_shape = c(6, 1)) %>% 
+  layer_dense(units = 1)
+
+  # Compilación del modelo sin promoción
+  df_REDN[[i]]$model_sinpr %>% compile(
+    loss = "mean_squared_error",
+    optimizer = optimizer_adam()
+  )
+  
+  # Entrenamiento del modelo sin promoción
+  df_REDN[[i]]$model_sinpr %>% fit(
+    x = array(train_input, 
+              dim = c(nrow(train_input), 6, 1)),  # La dimensión 6 representa las columnas de entrada
+    y = train_output_sinpr,  # Datos de salida correspondientes al modelo sin promoción
+   epochs     = 50,
+   batch_size = 32,
+   verbose    = 0
+  )
+  
+  # Predicción del modelo sin promoción
+  predictions_scaled_sinpr <- df_REDN[[i]]$model_sinpr %>% 
+    predict(array(test_input, 
+                  dim = c(nrow(test_input), 6, 1)), 
+            verbose = 0)
+  
+  # Escalar las predicciones inversamente para obtener valores originales
+  df_REDN[[i]]$pred_sinpr <- predictions_scaled_sinpr * 
+    (max(df_REDN[[i]]$sinpr$y) -
+       min(df_REDN[[i]]$sinpr$y)) +
+    min(df_REDN[[i]]$sinpr$y)
+  
+
+  # Con promocion
+  # Aplicar escala mínima y máxima (min-max scaling) a los datos de entrenamiento y prueba
+  train_data_scaled_pr <- as.data.frame(lapply(df_REDN[[i]]$pr, 
+                                               rescale))
+  test_data_scaled_pr <- as.data.frame(lapply(df_REDN[[i]]$pr_test,
+                                              rescale))
+  
+  # Preparar los datos de entrenamiento y prueba
+  train_input <- as.matrix(train_data_scaled_pr[, -which(names(train_data_scaled_pr) == "y")])  
+  train_output_pr <- train_data_scaled_pr$y 
+  test_input <- as.matrix(test_data_scaled_pr[, -which(names(test_data_scaled_pr) == "y")])  
+  
+  
+  # Construcción del modelo con promoción
+  df_REDN[[i]]$model_pr <- keras_model_sequential()
+  
+  df_REDN[[i]]$model_pr %>% 
+  layer_lstm(units = 64,
+             input_shape = c(7, 1)) %>% 
+  layer_dense(units = 1)
+
+  # Compilación del modelo con promoción
+  df_REDN[[i]]$model_pr %>% compile(
+    loss = "mean_squared_error",
+    optimizer = optimizer_adam()
+  )
+  
+  # Entrenamiento del modelo con promoción
+  df_REDN[[i]]$model_pr %>% fit(
+    x = array(train_input,
+              dim = c(nrow(train_input), 7, 1)), 
+    y = train_output_pr,  
+   epochs     = 50,
+   batch_size = 32,
+   verbose    = 0
+  )
+  
+  # Predicción del modelo con promoción
+  predictions_scaled_pr <- df_REDN[[i]]$model_pr %>% 
+    predict(array(test_input, 
+                  dim = c(nrow(test_input), 7, 1)),
+            verbose = 0)
+  
+  # Escalar las predicciones inversamente para obtener valores originales
+  df_REDN[[i]]$pred_pr <- predictions_scaled_pr * 
+    (max(df_REDN[[i]]$pr$y) -
+       min(df_REDN[[i]]$pr$y)) +
+    min(df_REDN[[i]]$pr$y)
+  
+  
+  # Si solo tenemos los dos modelos calculamos el RMSE
+  if (!is.null(df_REDN[[i]]$pred_sinpr) | !is.null(df_REDN[[i]]$pred_pr)) {
+    REDN_check <- c(REDN_check, i)
+    df_REDN[[i]]$rmse_sinpr <- sqrt(mean((df_REDN[[i]]$sinpr_test$y -
+                                                 df_REDN[[i]]$pred_sinpr)^2))
+    REDN_rmse_spr <- c(REDN_rmse_spr,
+                       sqrt(mean((df_REDN[[i]]$sinpr_test$y -
+                                    df_REDN[[i]]$pred_sinpr)^2)))
+    
+    df_REDN[[i]]$rmse_pr <- sqrt(mean((df_REDN[[i]]$pr_test$y -
+                                                 df_REDN[[i]]$pred_pr)^2))
+    REDN_rmse_pr <- c(REDN_rmse_pr, 
+                      sqrt(mean((df_REDN[[i]]$pr_test$y -
+                                   df_REDN[[i]]$pred_pr)^2)))
+  }
+
+}
+
+# Calcula el tiempo transcurrido
+end_time_all <- Sys.time() 
+elapsed_time_all <- end_time_all - start_time_all
+cat("Tiempo transcurrido:", elapsed_time_all, "minutos\n\n")
+
+# Tabla comparativa
+table(REDN_rmse_spr < REDN_rmse_pr)
+```
+
+
+```{r}
+factor_servicio <- 1.64 # Nivel de servicio del 95%
+coste_unitario_pct <- 0.05
+
+for (i in 1:length(unique(data_help$producto))) {
+  ciclo_aprovisionamiento <- df_REDN[[i]]$diasLeadtime
+
+  if (!is.null(df_REDN[[i]]$pred_sinpr) | !is.null(df_REDN[[i]]$pred_pr)) {
+    # Calculamos el stock de seguridad para ambos modelos
+    df_REDN[[i]]$stock_seguridad_sinpr <- factor_servicio * 
+      df_REDN[[i]]$rmse_sinpr *
+      sqrt(ciclo_aprovisionamiento)
+    df_REDN[[i]]$stock_seguridad_pr <- factor_servicio *
+      df_REDN[[i]]$rmse_pr *
+      sqrt(ciclo_aprovisionamiento)
+    
+    # Calculamos el coste del stock para ambos modelos
+    df_REDN[[i]]$coste_stock_sinpr <- coste_unitario_pct * df_REDN[[i]]$eurPrecioMedio * df_REDN[[i]]$stock_seguridad_sinpr
+    df_REDN[[i]]$coste_stock_pr <- coste_unitario_pct * df_REDN[[i]]$eurPrecioMedio * df_REDN[[i]]$stock_seguridad_pr
+  }
+}
+
+```
+
+
+### PLOT
+```{r}
+# Productos aleatorios
+# numero <- sample(which(REDN_rmse_spr > REDN_rmse_pr),1)
+# numero <- sample(which(REDN_rmse_spr < REDN_rmse_pr),1)
+# numero <- sample(which(REDN_rmse_spr == REDN_rmse_pr),1)
+# Seleccionamos un producto
+producto <- df_REDN[[numero]]
+
+# Crear un data frame con los datos para el grafico
+df_plot <- data.frame(
+  Fecha = c(unique(df_train$Fecha), 
+            unique(df_test$Fecha), 
+            unique(df_test$Fecha)),
+  Valor = c(as.vector(producto$sinpr$y),
+            as.vector(producto$pred_sinpr),
+            as.vector(producto$pred_pr)),
+  Tipo = c(rep("Ventas",
+               length(unique(df_train$Fecha))),
+           rep("Pred_sin", 
+               length(unique(df_test$Fecha))),
+           rep("Pred_con",
+               length( unique(df_test$Fecha))))
+)
+
+df_plot_test <- data.frame(
+  Fecha = unique(df_test$Fecha),
+  Valor = c(as.vector(producto$sinpr_test$y)),
+  Tipo  = c(rep("Ventas", 
+                length((producto$sinpr_test$y))))
+)
+
+# Combinar los dos data frames para el grafico
+df_plot <- rbind(df_plot,
+                 df_plot_test)
+
+# Crear el grafico de líneas de ventas y predicciones
+df_plot$Tipo <- factor(df_plot$Tipo,
+                       levels = c("Ventas",
+                                  "Pred_sin",
+                                  "Pred_con"))
+
+ggplot(df_plot, 
+       aes(x = Fecha, 
+           y = Valor,
+           color = Tipo)) +
+  geom_line() +
+  scale_color_manual(values = c("Pred_sin" = "red",
+                                "Pred_con" = "green", 
+                                "Ventas" = "cyan"),
+                     breaks = c("Pred_sin",
+                                "Pred_con",
+                                "Ventas")) +
+  labs(title = paste("Producto", 
+                     producto$Producto), 
+       y = "Unidades", 
+       x = "Fecha",
+       color = "Tipo") +
+  theme_minimal()
+
+
+# Crear un grafico de barras para los costos de almacenamiento
+df_cost <- data.frame(
+  Tipo = c("Coste_sin",
+           "Coste_con"),
+  Coste = c(producto$coste_stock_sinpr, 
+            producto$coste_stock_pr)
+)
+
+ggplot(df_cost, aes(x = Tipo, 
+                    y = Coste,
+                    fill = Tipo)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(Coste, 2)),
+            vjust = 0.5,
+            hjust = 0.5,
+            color = "black",
+            size = 5) +
+  labs(title = paste("Coste de almacenamiento del producto",
+                     producto$Producto), 
+       y = "Coste", 
+       x = "", 
+       fill = "Tipo") +
+  theme_minimal()
+```
+
+
+# Extraccion de datos y tablas
+```{r, eval = FALSE}
+# Creamos un dataframe vacío
+df_results <- data.frame()
+productos <- unique(df_train_rnn$producto)
+
+while (nrow(df_results) < 20) {
+  # Generar un número aleatorio
+  i <- sample(productos, 1)
+
+  
+  # Comprobar si hay resultados para todos los parámetros
+  if (!is.null(df_NAIVE[[i]]$rmse_sinpr) &&
+      !is.null(df_NAIVE[[i]]$coste_stock_sinpr) &&
+      !is.null(df_EXPS[[i]]$rmse_sinpr) &&
+      !is.null(df_EXPS[[i]]$coste_stock_sinpr) &&
+      !is.null(df_ARIMA[[i]]$rmse_sinpr) &&
+      !is.null(df_ARIMA[[i]]$coste_stock_sinpr) &&
+      !is.null(df_ARIMA[[i]]$rmse_pr) &&
+      !is.null(df_ARIMA[[i]]$coste_stock_pr) &&
+      !is.null(df_PROPH[[i]]$rmse_sinpr) &&
+      !is.null(df_PROPH[[i]]$coste_stock_sinpr) &&
+      !is.null(df_PROPH[[i]]$rmse_pr) &&
+      !is.null(df_PROPH[[i]]$coste_stock_pr) &&
+      !is.null(df_RED[[i]]$rmse_gbm_sinpr) &&
+      !is.null(df_RED[[i]]$coste_stock_sinpr) &&
+      !is.null(df_RED[[i]]$rmse_gbm_pr) &&
+      !is.null(df_RED[[i]]$coste_stock_pr) &&
+      !is.null(df_REDN[[i]]$rmse_gbm_sinpr) &&
+      !is.null(df_REDN[[i]]$coste_stock_sinpr) &&
+      !is.null(df_REDN[[i]]$rmse_gbm_pr) &&
+      !is.null(df_REDN[[i]]$coste_stock_pr) &&
+      !is.null(df_GBM[[i]]$rmse_gbm_sinpr) &&
+      !is.null(df_GBM[[i]]$coste_stock_sinpr) &&
+      !is.null(df_GBM[[i]]$rmse_gbm_pr) &&
+      !is.null(df_GBM[[i]]$coste_stock_pr)
+  ) {
+    # Crear el vector de datos
+    dato <- c(i,
+              df_NAIVE[[i]]$rmse_sinpr,
+              df_NAIVE[[i]]$coste_stock_sinpr,
+              df_NAIVE[[i]]$stock_seguridad_sinpr,
+              df_EXPS[[i]]$rmse_sinpr,
+              df_EXPS[[i]]$coste_stock_sinpr,
+              df_EXPS[[i]]$stock_seguridad_sinpr,
+              df_ARIMA[[i]]$rmse_sinpr,
+              df_ARIMA[[i]]$coste_stock_sinpr,
+              df_ARIMA[[i]]$stock_seguridad_sinpr,
+              df_ARIMA[[i]]$rmse_pr,
+              df_ARIMA[[i]]$coste_stock_pr,
+              df_ARIMA[[i]]$stock_seguridad_pr,
+              df_PROPH[[i]]$rmse_sinpr,
+              df_PROPH[[i]]$coste_stock_sinpr,
+              df_PROPH[[i]]$stock_seguridad_sinpr,
+              df_PROPH[[i]]$rmse_pr,
+              df_PROPH[[i]]$coste_stock_pr,
+              df_PROPH[[i]]$stock_seguridad_pr,
+              df_RED[[i]]$rmse_gbm_sinpr,
+              df_RED[[i]]$coste_stock_sinpr,
+              df_RED[[i]]$stock_seguridad_sinpr,
+              df_RED[[i]]$rmse_gbm_pr,
+              df_RED[[i]]$coste_stock_pr,
+              df_RED[[i]]$stock_seguridad_pr,
+              df_REDN[[i]]$rmse_gbm_sinpr,
+              df_REDN[[i]]$coste_stock_sinpr,
+              df_REDN[[i]]$stock_seguridad_sinpr,
+              df_REDN[[i]]$rmse_gbm_pr,
+              df_REDN[[i]]$coste_stock_pr,
+              df_REDN[[i]]$stock_seguridad_pr,
+              df_GBM[[i]]$rmse_gbm_sinpr,
+              df_GBM[[i]]$coste_stock_sinpr,
+              df_GBM[[i]]$stock_seguridad_sinpr,
+              df_GBM[[i]]$rmse_gbm_pr,
+              df_GBM[[i]]$coste_stock_pr,
+              df_GBM[[i]]$stock_seguridad_pr
+    )
+    
+    # Agregar los datos al dataframe df_results
+    df_results <- rbind(df_results, dato)
+  }
+}
+
+# Asignar los nombres de las columnas
+names(df_results) <- c("producto",
+                       "Naive rmse",
+                       "Naive cost",
+                       "Naive stock sin",
+                       "EXP rmse",
+                       "EXP cost",
+                       "EXP stock sin",
+                       "Arima rmse sin",
+                       "Arima cost sin",
+                       "Arima stock sin",
+                       "Arima rmse con",
+                       "Arima cost con",
+                       "Arima stock con",
+                       "Prophet rmse sin",
+                       "Prophet cost sin",
+                       "Prophet stock sin",
+                       "Prophet rmse con",
+                       "Prophet cost con",
+                       "Propher stock con",
+                       "RED rmse sin",
+                       "RED cost sin",
+                       "RED stock sin",
+                       "RED rmse con",
+                       "RED cost con",
+                       "RED stock con",
+                       "REDN rmse sin",
+                       "REDN cost sin",
+                       "REDN stock sin",
+                       "REDN rmse con",
+                       "REDN cost con",
+                       "REDN stock con",
+                       "GBM rmse sin",
+                       "GBM cost sin",
+                       "GBM stock sin",
+                       "GBM rmse con",
+                       "GBM cost con",
+                       "GBM stock con")
+
+# Redondear los valores en el dataframe
+df_results <- as.data.frame(lapply(df_results,
+                                   function(x) round(x, 2)))
+
+# Selección de columnas
+df_results_rmse <- df_results %>%
+  select(producto, contains("rmse"))
+
+df_results_cost <- df_results %>%
+  select(producto, contains("cost"))
+
+df_results_stock <- df_results %>%
+  select(producto, contains("stock"))
+
+# # Guardar los resultados en archivos Excel
+# library(openxlsx)
+# write.xlsx(df_results_rmse, file = "rmse_20.xlsx", rowNames = TRUE)
+# write.xlsx(df_results_cost, file = "cost_20.xlsx", rowNames = TRUE)
+# write.xlsx(df_results_stock, file = "stock_20.xlsx", rowNames = TRUE)
+```
+
+```{r}
+# Creamos un dataframe vacío
+df_results_all <- data.frame()
+
+for (i in 1:968) {
+  
+  # Comprobar si hay resultados para todos los parámetros
+  # if (!is.null(df_NAIVE[[i]]$rmse_sinpr) &&
+  #     !is.null(df_NAIVE[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_EXPS[[i]]$rmse_sinpr) &&
+  #     !is.null(df_EXPS[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_ARIMA[[i]]$rmse_sinpr) &&
+  #     !is.null(df_ARIMA[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_ARIMA[[i]]$rmse_pr) &&
+  #     !is.null(df_ARIMA[[i]]$coste_stock_pr) &&
+  #     !is.null(df_PROPH[[i]]$rmse_sinpr) &&
+  #     !is.null(df_PROPH[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_PROPH[[i]]$rmse_pr) &&
+  #     !is.null(df_PROPH[[i]]$coste_stock_pr) &&
+  #     !is.null(df_RED[[i]]$rmse_gbm_sinpr) &&
+  #     !is.null(df_RED[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_RED[[i]]$rmse_gbm_pr) &&
+  #     !is.null(df_RED[[i]]$coste_stock_pr) &&
+  #     !is.null(df_REDN[[i]]$rmse_gbm_sinpr) &&
+  #     !is.null(df_REDN[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_REDN[[i]]$rmse_gbm_pr) &&
+  #     !is.null(df_REDN[[i]]$coste_stock_pr) &&
+  #     !is.null(df_GBM[[i]]$rmse_gbm_sinpr) &&
+  #     !is.null(df_GBM[[i]]$coste_stock_sinpr) &&
+  #     !is.null(df_GBM[[i]]$rmse_gbm_pr) &&
+  #     !is.null(df_GBM[[i]]$coste_stock_pr)
+  # ) {
+    # Crear el vector de datos
+    dato <- c(i,
+              df_NAIVE[[i]]$rmse_sinpr,
+              df_NAIVE[[i]]$coste_stock_sinpr,
+              df_EXPS[[i]]$rmse_sinpr,
+              df_EXPS[[i]]$coste_stock_sinpr,
+              df_ARIMA[[i]]$rmse_sinpr,
+              df_ARIMA[[i]]$coste_stock_sinpr,
+              df_ARIMA[[i]]$rmse_pr,
+              df_ARIMA[[i]]$coste_stock_pr,
+              df_PROPH[[i]]$rmse_sinpr,
+              df_PROPH[[i]]$coste_stock_sinpr,
+              df_PROPH[[i]]$rmse_pr,
+              df_PROPH[[i]]$coste_stock_pr,
+              df_RED[[i]]$rmse_gbm_sinpr,
+              df_RED[[i]]$coste_stock_sinpr,
+              df_RED[[i]]$rmse_gbm_pr,
+              df_RED[[i]]$coste_stock_pr,
+              df_REDN[[i]]$rmse_gbm_sinpr,
+              df_REDN[[i]]$coste_stock_sinpr,
+              df_REDN[[i]]$rmse_gbm_pr,
+              df_REDN[[i]]$coste_stock_pr,
+              df_GBM[[i]]$rmse_gbm_sinpr,
+              df_GBM[[i]]$coste_stock_sinpr,
+              df_GBM[[i]]$rmse_gbm_pr,
+              df_GBM[[i]]$coste_stock_pr
+    )
+        # Agregar los datos al dataframe df_results
+        df_results_all <- rbind(df_results_all, dato)
+  # }
+}
+
+# Asignar los nombres de las columnas
+names(df_results_all) <- c("producto",
+                       "Naive rmse",
+                       "Naive cost",
+                       "EXP rmse",
+                       "EXP cost",
+                       "Arima rmse sin",
+                       "Arima cost sin",
+                       "Arima rmse con",
+                       "Arima cost con",
+                       "Prophet rmse sin",
+                       "Prophet cost sin",
+                       "Prophet rmse con",
+                       "Prophet cost con",
+                       "RED rmse sin",
+                       "RED cost sin",
+                       "RED rmse con",
+                       "RED cost con",
+                       "REDN rmse sin",
+                       "REDN cost sin",
+                       "REDN rmse con",
+                       "REDN cost con",
+                       "GBM rmse sin",
+                       "GBM cost sin",
+                       "GBM rmse con",
+                       "GBM cost con")
+
+
+# Redondear los valores en el dataframe
+df_results_all <- as.data.frame(lapply(df_results_all, function(x) round(x, 12)))
+
+colSums(is.na(df_results_all))
+
+# Eliminar filas con valores nulos
+df_results_all <- df_results_all[complete.cases(df_results_all), ]
+
+# Elegimos solo con rmse
+df_results_all <- df_results_all %>%
+  select(contains("rmse"))
+
+# Obtener la cantidad de veces que cada columna tiene el menor valor de la fila
+cantidad_minimos <- colSums(df_results_all == apply(df_results_all, 1, min))
+
+# Imprimir los resultados
+print(cantidad_minimos)
+
+```
+
+
+# MORDOR
+https://github.com/manuparra/seriestemporales/blob/master/README.md
+
+https://rpubs.com/AdSan-R/GBM
