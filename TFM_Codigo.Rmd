@@ -43,7 +43,7 @@ library(neuralnet)
 ## Lectura de datos
 ```{r}
 # Ponemos la direccion donde se encuentran nuestros documentos
-personal_path <- "C:/Users/mp334/OneDrive/Escritorio/TFM/"
+personal_path <- ".../Datasets/"
 
 # Leemos los documentos
 data_Ciclo <- read_xlsx(paste0(personal_path,
